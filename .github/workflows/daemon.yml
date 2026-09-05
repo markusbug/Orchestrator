@@ -1,0 +1,37 @@
+name: daemon
+
+on:
+  push:
+    branches: [main]
+    paths: ["daemon/**", ".github/workflows/daemon.yml"]
+  pull_request:
+    paths: ["daemon/**", ".github/workflows/daemon.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: daemon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race -timeout 300s ./...
+      - name: cross-compile darwin/arm64
+        run: GOOS=darwin GOARCH=arm64 go build -o /dev/null ./...
+      - name: cross-compile linux/arm64
+        run: GOOS=linux GOARCH=arm64 go build -o /dev/null ./...
+      - name: build
+        run: go build -ldflags "-s -w -X github.com/markusbug/Orchestrator/daemon/internal/core.Version=${GITHUB_SHA::8}" -o ../bin/orchestrator ./cmd/orchestrator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator-linux-amd64
+          path: bin/orchestrator

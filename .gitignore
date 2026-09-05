@@ -31,3 +31,6 @@ dist/
 *.p12
 *.keystore
 .env
+
+# Build output
+bin/

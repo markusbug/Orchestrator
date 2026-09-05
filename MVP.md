@@ -6,10 +6,11 @@ The first version targets exactly one host platform and one phone platform:
 
 - **Host: Ubuntu** (the developer's own laptop). macOS host support comes right after; the code is written portably from day one.
 - **Phone: iPhone**, built in GitHub Actions on a macOS runner and sideloaded with a free Apple ID. Android comes after the iOS app works.
+- **Same network only.** For the MVP the phone and the host must be on the same Wi-Fi/LAN. Remote access via Tailscale is the first post-MVP item; the daemon already lists Tailscale addresses in the QR when it finds one, so nothing in the protocol changes.
 
 The MVP is done when this works end to end:
 
-> Install the daemon on an Ubuntu laptop with one command. Pair the iPhone by scanning a QR code printed in the terminal. From the phone, browse to a project folder, start Claude Code there, give it a task, lock the phone, come back an hour later on a different network, and pick up the same session with its screen intact.
+> Install the daemon on an Ubuntu laptop with one command. Pair the iPhone by scanning a QR code printed in the terminal. From the phone, on the same Wi-Fi, browse to a project folder, start Claude Code there, give it a task, lock the phone, come back an hour later, and pick up the same session with its screen intact.
 
 ## Scope
 
@@ -17,12 +18,13 @@ The MVP is done when this works end to end:
 
 - Host daemon (Go) as a CLI, running as a systemd user service on Ubuntu.
 - iOS app (Flutter), sideloaded with a free Apple ID.
-- Direct connection over LAN and over Tailscale. Nothing else.
+- Direct connection over the local network. Nothing else.
 - Any number of sessions per host, any number of hosts per phone.
 - GitHub Actions workflow that produces an unsigned `.ipa` on every tag.
 
 **Out (explicitly, until after MVP)**
 
+- Remote access from outside the LAN (Tailscale first, relay later).
 - macOS and Windows hosts. Design for them, ship after Ubuntu works.
 - Android build. Same Flutter code, enabled once the iOS app is usable.
 - Desktop GUI, tray app, setup wizard.
@@ -30,7 +32,7 @@ The MVP is done when this works end to end:
 - Relay server, accounts, billing, push notifications. Push is also impossible on a free Apple ID.
 - App Store / TestFlight distribution. Requires the paid Apple Developer Program.
 - Structured/chat rendering of Claude Code. Terminal only.
-- Session survival across daemon restarts. Stale sessions are marked and can be resumed with one tap via `claude --continue`.
+- Session survival across daemon restarts. Stale sessions are marked and can be resumed with one tap.
 
 ## Host side (daemon, Ubuntu)
 
@@ -49,18 +51,19 @@ orchestrator logs               tail the log file
 
 ### Must have
 
-- **Sessions.** Spawn a PTY with cwd, command, args, cols, rows. Default command is `claude`. Track id, name, cwd, pid, status (running, waiting, exited, stale), exit code, created, last output time.
+- **Sessions.** Spawn a PTY with cwd, command, args, cols, rows. Default command is `claude`. Track id (UUID), a per-run `uint32` handle for binary frames, name, cwd, pid, status (running, waiting, exited, stale), exit code, created, last output time, and a one-line preview of the latest output.
 - **Scrollback.** Per-session ring buffer, 1 MB default. On attach: replay buffer, then apply the client's size so the TUI redraws.
 - **Multi-attach.** More than one client on the same session at once. Last resize wins.
-- **Metadata store.** SQLite file under the config dir. On startup, sessions whose pid is gone become *stale* and keep their cwd for resume.
+- **Metadata store.** SQLite file under the config dir. Every non-exited session becomes *stale* on daemon startup (closing the PTY kills its child), and keeps its cwd, command, and Claude session id for resume. A graceful daemon shutdown also records its sessions as stale, not exited.
 - **Filesystem API.** List a directory (dirs first, hidden toggle, `.git` marker), stat, and a bounded recursive name search. Roots default to the home directory.
-- **Claude conversation list.** Read `~/.claude/projects/<encoded cwd>/*.jsonl` to list previous conversations for a folder with their first prompt and timestamp, so the phone can offer *resume* when creating a session.
-- **Attention flag.** Launch `claude` with `--settings <generated json>` that adds `Notification` and `Stop` hooks calling `orchestrator _hook <session id> <event>` over the local admin socket. Sets status to *waiting* or clears it. Fallback: terminal bell.
+- **Claude conversation list.** Read `~/.claude/projects/<encoded cwd>/*.jsonl` to list previous conversations for a folder with their first prompt and timestamp, so the phone can offer *resume* when creating a session. The directory name replaces every byte outside `[A-Za-z0-9_]` with `-`; it is lossy, so always encode, never decode.
+- **Resume strategy.** Claude sessions launch with `--session-id <uuid>` so the conversation id is known up front. `session.resume` relaunches a stale or exited session in the same folder with `--resume <uuid>` (or `--continue` if no id is known) and removes the old row.
+- **Attention flag.** Launch `claude` with `--settings <generated json>` that adds `Notification`, `Stop`, and `UserPromptSubmit` hooks calling `<abs path>/orchestrator _hook <event>` over the local admin socket; the session id travels in `ORCHESTRATOR_SESSION_ID`. Notification and Stop set *waiting*; UserPromptSubmit and any client input set *running*. Fallback: terminal bell.
 - **Transport.** WebSocket over TLS on a configurable port (default 7391). Self-signed cert generated on first run, fingerprint printed by `status` and embedded in the QR.
 - **Auth.** Pairing: QR carries `{addresses, port, fingerprint, code}`. Phone connects, presents code and its public key, daemon stores it. Later connections: challenge signed by the phone's key. Rate limit failures. Codes are single-use.
 - **Addresses in QR.** All non-loopback IPv4/IPv6 addresses, with Tailscale addresses marked as such so the app prefers them when off-LAN.
 - **Local admin socket.** Unix socket for CLI subcommands and hooks. No auth beyond file permissions.
-- **Service install.** systemd user unit with `Restart=on-failure`, enabled with `loginctl enable-linger` so it survives logout. Log file with rotation. The launchd equivalent is a follow-up.
+- **Service install.** systemd user unit with `Restart=on-failure` and the installing user's PATH baked in (so `claude` resolves), enabled with `loginctl enable-linger` so it survives logout. Logs go to journald; `orchestrator logs` follows them. The launchd equivalent is a follow-up.
 - **Config.** `~/.config/orchestrator/config.toml`. Port, bind address, roots, default command, scrollback size.
 - **Portability rule.** No Linux-only assumptions outside `internal/service/` and the PTY layer. Build must pass with `GOOS=darwin` even if untested.
 
@@ -68,34 +71,43 @@ orchestrator logs               tail the log file
 
 One WebSocket per phone-host pair.
 
-Text frames, JSON, `{ "t": "<type>", "id": <req id>, ...}`:
+Text frames, JSON, `{ "t": "<type>", "rid": <request id>, ...payload }`. Replies echo `rid`; server-initiated messages have none.
 
 | Client → host | Host → client |
 |---|---|
-| `hello {proto, device}` | `hello {proto, host, version}` |
-| `auth {signature}` | `auth.ok` / `auth.fail` |
+| `hello {proto, device_id?, name, client_nonce}` | `hello {proto, host, version, server_nonce, fingerprint, auth_needed}` |
+| `pair {code, pubkey, name}` | `pair.ok {device_id}` |
+| `auth {device_id, sig}` | `auth.ok {device_id}` / `auth.fail` (then close) |
 | `session.list` | `session.list {sessions[]}` |
-| `session.create {cwd, cmd, args, name, cols, rows}` | `session.created {session}` |
-| `session.attach {id, cols, rows}` | `session.attached {session}` then replay |
-| `session.detach {id}` | |
-| `session.resize {id, cols, rows}` | |
-| `session.kill {id, signal}` | |
-| `session.rename {id, name}` | |
-| | `session.event {session}` on any status change |
-| `fs.list {path, hidden}` | `fs.list {entries[]}` |
-| `fs.search {root, query, limit}` | `fs.search {entries[]}` |
-| `claude.conversations {cwd}` | `claude.conversations {items[]}` |
+| `session.create {cwd, cmd?, args?, name?, cols, rows}` | `session.created {session}` |
+| `session.resume {id, cols, rows}` | `session.created {session}` |
+| `session.attach {id, cols, rows}` | `session.attached {session}` then replay frames |
+| `session.detach {id}` | `ok` |
+| `session.resize {id, cols, rows}` | `ok` |
+| `session.kill {id, signal?}` | `ok` |
+| `session.rename {id, name}` | `ok` |
+| `session.remove {id}` | `ok` |
+| | `session.event {session}` on any change |
+| | `session.removed {id}` |
+| | `session.detached {id, reason}` (exited, slow) |
+| `fs.list {path, hidden?}` | `fs.list {path, parent, entries[]}` |
+| `fs.search {root?, query, limit?}` | `fs.search {entries[]}` |
+| `fs.recents` | `fs.recents {paths[]}` |
+| `claude.conversations {cwd}` | `claude.conversations {conversations[]}` |
+| `host.info` | `host.info {host, version, fingerprint, port, addrs[], roots[], default_cmd, home}` |
 | `ping` | `pong` |
 
-Binary frames: `[1 byte kind][4 byte session id BE][payload]`. Kind `0x01` input (client → host), `0x02` output (host → client). Multiple attached sessions share the socket.
+`sig` is an Ed25519 signature over `"orch-auth-v1" || server_nonce || client_nonce || fingerprint || device_id`. The server nonce is single-use.
 
-Errors: `{ "t": "error", "id": <req id>, "code": "...", "message": "..." }`.
+Binary frames: `[1 byte kind][4 byte session handle BE][payload]`. Kind `0x01` input (client → host), `0x02` output (host → client). The handle is per daemon run; the stable session id is the UUID in `session.list`. Multiple attached sessions share the socket.
+
+Errors: `{ "t": "error", "rid": N, "code": "bad_request|unauthorized|forbidden|not_found|rate_limited|internal", "message": "..." }`. Three protocol errors close the connection.
 
 ### Dev tooling
 
-- `daemon/web/` embedded xterm.js page served at `https://host:port/_debug` when `--debug` is set. Lets the daemon be built and tested fully before the app exists.
-- `go test` coverage for ring buffer, protocol framing, auth handshake, session lifecycle.
-- Linux CI job: `go vet`, `go test`, and cross-compile check for `darwin/arm64`.
+- `daemon/web/` embedded xterm.js page served at `https://host:port/_debug/` when `--debug` is set. With `--debug`, connections from loopback are auto-authenticated. Never run `--debug` on a shared machine. Lets the daemon be built and tested fully before the app exists.
+- `go test` coverage for ring buffer, protocol framing, auth handshake, session lifecycle, filesystem API, Claude integration, and a WebSocket integration test that pairs, creates, attaches, types, kills, and resumes.
+- Linux CI job (`.github/workflows/daemon.yml`): gofmt, `go vet`, `go test -race`, and cross-compile checks for `darwin/arm64` and `linux/arm64`.
 
 ## Phone side (iOS app)
 
@@ -158,7 +170,7 @@ orchestrator install
 orchestrator pair
 ```
 
-The install script downloads the latest release binary for `linux/amd64` or `linux/arm64` into `~/.local/bin`. Tailscale is documented as the way to reach the laptop from outside the LAN. The pair output says whether a Tailscale address was found.
+The install script downloads the latest release binary for `linux/amd64` or `linux/arm64` into `~/.local/bin`. Until it exists, `make build` in the repo produces `bin/orchestrator`. The phone must be on the same network as the host; the pair output prints every address it found.
 
 **Phone (iPhone)**
 
@@ -168,7 +180,7 @@ Unsigned IPA from GitHub releases, installed via iloader/SideStore as described 
 
 - [ ] Start a Claude Code session from the phone in a chosen folder in 3 taps from the host screen.
 - [ ] Close the app, wait 10 minutes, reopen, and the session is still running with its screen restored.
-- [ ] Switch phone from Wi-Fi to mobile data with Tailscale on; app reconnects within 10 seconds without user action.
+- [ ] Turn Wi-Fi off and on again on the phone; app reconnects within 10 seconds without user action.
 - [ ] Run 10 sessions concurrently on the host; list and switching remain responsive.
 - [ ] Claude asks a permission question; the session card shows *waiting* within 2 seconds.
 - [ ] Kill and restart the daemon; sessions show as stale; Resume starts `claude --continue` in the right folder.
@@ -179,8 +191,8 @@ Unsigned IPA from GitHub releases, installed via iloader/SideStore as described 
 
 ## Build order
 
-1. Daemon: session manager, ring buffer, WebSocket protocol, debug web page. Verify with a browser on Ubuntu.
-2. Daemon: TLS, pairing, auth, fs API, systemd install, CLI. Linux CI with tests and darwin cross-compile check.
+1. ✅ Daemon: session manager, ring buffer, WebSocket protocol, debug web page. Verify with a browser on Ubuntu.
+2. ✅ Daemon: TLS, pairing, auth, fs API, systemd install, CLI. Linux CI with tests and darwin cross-compile check.
 3. Repo: Flutter project skeleton, iOS workflow producing an unsigned IPA. Sideload the empty app once to prove the pipeline before writing UI.
 4. App: pairing, connection manager, hosts, sessions list, terminal view.
 5. App: folder picker, new session flow, settings.

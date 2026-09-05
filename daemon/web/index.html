@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestrator debug</title>
+<link rel="stylesheet" href="static/xterm.css">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #111; color: #ddd; }
+  header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; background: #1b1b1b; border-bottom: 1px solid #333; }
+  header h1 { font-size: 15px; margin: 0; }
+  #status { font-size: 12px; color: #9a9; }
+  main { padding: 12px; }
+  form { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  input { background: #222; color: #eee; border: 1px solid #444; padding: 6px 8px; border-radius: 4px; }
+  input[name=cwd] { flex: 1; min-width: 260px; }
+  button { background: #2b5; color: #000; border: 0; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+  button.secondary { background: #444; color: #eee; }
+  button.danger { background: #b33; color: #fff; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #2a2a2a; font-size: 13px; }
+  .st { padding: 2px 6px; border-radius: 3px; font-size: 11px; text-transform: uppercase; }
+  .st.running { background: #264; } .st.waiting { background: #a60; } .st.exited { background: #444; } .st.stale { background: #633; }
+  .preview { color: #888; font-family: ui-monospace, monospace; font-size: 12px; max-width: 420px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #term-view { display: none; position: fixed; inset: 0; background: #000; flex-direction: column; }
+  #term-bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: #1b1b1b; }
+  #term { flex: 1; padding: 4px; }
+  #term-view.open { display: flex; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Orchestrator</h1>
+  <span id="status">connecting…</span>
+  <span id="hostinfo" style="font-size:12px;color:#888"></span>
+</header>
+<main>
+  <form id="create">
+    <input name="cwd" placeholder="working directory (absolute)" required>
+    <input name="cmd" placeholder="command (default: claude)" style="width:180px">
+    <input name="name" placeholder="name (optional)" style="width:140px">
+    <button type="submit">New session</button>
+    <button type="button" class="secondary" id="refresh">Refresh</button>
+  </form>
+  <table>
+    <thead><tr><th>Name</th><th>Status</th><th>Folder</th><th>Preview</th><th></th></tr></thead>
+    <tbody id="sessions"></tbody>
+  </table>
+</main>
+<div id="term-view">
+  <div id="term-bar">
+    <button class="secondary" id="back">← Sessions</button>
+    <strong id="term-title"></strong>
+    <span id="term-status" class="st"></span>
+    <span style="flex:1"></span>
+    <button class="secondary" id="send-esc">Esc</button>
+    <button class="secondary" id="send-ctrlc">Ctrl-C</button>
+    <button class="secondary" id="send-shifttab">Shift-Tab</button>
+    <button class="danger" id="kill">Kill</button>
+  </div>
+  <div id="term"></div>
+</div>
+<script src="static/xterm.js"></script>
+<script src="static/addon-fit.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
