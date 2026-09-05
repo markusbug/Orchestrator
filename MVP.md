@@ -38,21 +38,25 @@ Updated 2026-09-05. Tick items here as they land so this file stays the single s
 - [ ] Release pipeline: goreleaser config, `scripts/install.sh`, first tagged `linux/amd64` + `linux/arm64` binaries (build order step 7)
 - [ ] Local notification path for the app relies on nothing server-side; no work needed
 
-### iOS app — not started
+### iOS app — implemented, not yet sideloaded
 
-- [ ] Flutter project skeleton in `app/` (build order step 3)
-- [ ] `.github/workflows/ios.yml` producing an unsigned IPA on `app-v*` tags; sideload once via iloader/SideStore to prove the pipeline
-- [ ] Pairing by QR + manual entry; keys in Keychain; fingerprint pinning
-- [ ] Connection manager: one socket per host, LAN address first, backoff, reconnect on foreground and network change, auto re-attach with replay
-- [ ] Hosts screen, Sessions screen with waiting badge and preview, kill / rename / remove
-- [ ] New session flow: recents, breadcrumb browser, search, command sheet with resume list
-- [ ] Terminal screen: xterm, key bar (Esc, Tab, sticky Ctrl, arrows, /, ⇧Tab, paste), pinch zoom, copy, swipe between sessions
-- [ ] Settings: font, theme, key bar order, haptics, per-host rename / forget
-- [ ] Stale resume button; in-app badges; local notification while backgrounded and connected
+Flutter project in `app/`, verified on Ubuntu with `flutter analyze`, `flutter test` (fake daemon over TLS), and `test/live_test.dart` against the real Go daemon (pair, auth, create, attach, replay, resize, rename, kill, resume, remove). Not yet built for iOS or run on a phone.
+
+- [x] Flutter project skeleton in `app/` (build order step 3)
+- [x] `.github/workflows/ios.yml` producing an unsigned IPA on `app-v*` tags; `.github/workflows/app.yml` runs format, analyze, and tests on Linux
+- [ ] Sideload once via iloader/SideStore to prove the pipeline (needs the first `app-v*` tag and the phone)
+- [x] Pairing by QR (`mobile_scanner`) + manual entry; Ed25519 keys in the Keychain (`flutter_secure_storage`); fingerprint pinning with system roots disabled
+- [x] Connection manager: one socket per host, last-good then LAN then Tailscale, exponential backoff with jitter, reconnect on foreground and network change, ping probe, auto re-attach with replay
+- [x] Hosts screen (online dot, running/waiting counts, waiting badge, rename/forget), Sessions screen (sorted cards, preview, swipe to kill/remove, long-press rename, pull to refresh)
+- [x] New session flow: recents, breadcrumb browser with `.git` markers and hidden toggle, search, command sheet with resume list
+- [x] Terminal screen: xterm.dart, key bar (Esc, Tab, sticky Ctrl, arrows, /, ⇧Tab, paste, and optional ^C / Enter), pinch zoom, copy selection, swipe on the title bar between sessions, force kill
+- [x] Settings: font size, theme, key bar order, haptics, notifications, device name, per-host rename / forget
+- [x] Stale resume button; in-app badges; local notification while backgrounded and connected (`flutter_local_notifications`)
+- [ ] On-device pass: keyboard/resize behaviour, notification permission prompt, camera prompt, local-network prompt
 
 ### Acceptance checklist status
 
-See the checklist below. Host-only items that can already be verified: sessions survive the app closing (daemon holds them), 10 concurrent sessions, hook-driven *waiting* within 2 seconds, revoke disconnects, daemon restart marks sessions stale and resume works, darwin cross-compile passes, CI produces a binary. Everything involving the phone waits on the app.
+See the checklist below. Host-only items that can already be verified: sessions survive the app closing (daemon holds them), 10 concurrent sessions, hook-driven *waiting* within 2 seconds, revoke disconnects, daemon restart marks sessions stale and resume works, darwin cross-compile passes, CI produces a binary. The app code for every phone item exists and is exercised against the real daemon by `app/test/live_test.dart`; ticking those items needs the IPA on a phone.
 
 ## Scope
 
@@ -235,9 +239,9 @@ Unsigned IPA from GitHub releases, installed via iloader/SideStore as described 
 
 1. ✅ Daemon: session manager, ring buffer, WebSocket protocol, debug web page. Verify with a browser on Ubuntu.
 2. ✅ Daemon: TLS, pairing, auth, fs API, systemd install, CLI. Linux CI with tests and darwin cross-compile check.
-3. Repo: Flutter project skeleton, iOS workflow producing an unsigned IPA. Sideload the empty app once to prove the pipeline before writing UI.
-4. App: pairing, connection manager, hosts, sessions list, terminal view.
-5. App: folder picker, new session flow, settings.
-6. Daemon: ✅ hooks-based attention, conversation list, stale resume. App: badges, local notifications, resume button.
+3. ✅ Repo: Flutter project skeleton, iOS workflow producing an unsigned IPA. (Sideloading still to do.)
+4. ✅ App: pairing, connection manager, hosts, sessions list, terminal view.
+5. ✅ App: folder picker, new session flow, settings.
+6. ✅ Daemon: hooks-based attention, conversation list, stale resume. ✅ App: badges, local notifications, resume button.
 7. Release: goreleaser for the daemon, install script, tagged app builds.
 8. After MVP: macOS host (launchd), Android build, then the rest of PLAN.md.
