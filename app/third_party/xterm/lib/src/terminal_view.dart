@@ -228,6 +228,7 @@ class TerminalViewState extends State<TerminalView> {
     Widget child = Scrollable(
       key: _scrollableKey,
       controller: _scrollController,
+      physics: const _ScrollbackPhysics(),
       viewportBuilder: (context, offset) {
         return _TerminalView(
           key: _viewportKey,
@@ -251,7 +252,9 @@ class TerminalViewState extends State<TerminalView> {
     child = TerminalScrollGestureHandler(
       terminal: widget.terminal,
       simulateScroll: widget.simulateScroll,
-      getCellOffset: (offset) => renderTerminal.getCellOffset(offset),
+      // The handler records global pointer positions. (Orchestrator patch.)
+      getCellOffset: (offset) =>
+          renderTerminal.getCellOffset(renderTerminal.globalToLocal(offset)),
       getLineHeight: () => renderTerminal.lineHeight,
       child: child,
     );
@@ -457,6 +460,27 @@ class TerminalViewState extends State<TerminalView> {
     if (position != null) {
       position.jumpTo(position.maxScrollExtent);
     }
+  }
+}
+
+/// Physics for the scrollback [Scrollable]: only take drag gestures when
+/// there is scrollback to move through. The platform default on iOS is
+/// [BouncingScrollPhysics], which accepts drags even with nothing to scroll,
+/// so in the alternate screen buffer (whose scrollback is empty) the inner
+/// scrollable won the gesture arena and merely bounced, and the drag never
+/// reached [TerminalScrollGestureHandler] to be reported as mouse wheel
+/// events to the application. (Orchestrator patch; not in upstream 4.0.0.)
+class _ScrollbackPhysics extends ScrollPhysics {
+  const _ScrollbackPhysics({super.parent});
+
+  @override
+  _ScrollbackPhysics applyTo(ScrollPhysics? ancestor) {
+    return _ScrollbackPhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  bool shouldAcceptUserOffset(ScrollMetrics position) {
+    return position.maxScrollExtent > position.minScrollExtent;
   }
 }
 

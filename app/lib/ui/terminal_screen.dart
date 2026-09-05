@@ -40,6 +40,7 @@ class TerminalScreen extends StatefulWidget {
 class _TerminalScreenState extends State<TerminalScreen> {
   late Terminal _terminal;
   final _controller = TerminalController();
+  final _viewKey = GlobalKey<TerminalViewState>();
   TerminalBinding? _binding;
   ByteConversionSink? _utf8;
   bool _ctrl = false;
@@ -181,6 +182,18 @@ class _TerminalScreenState extends State<TerminalScreen> {
     if (_ctrl && k != KeyBarItem.ctrl) setState(() => _ctrl = false);
   }
 
+  /// Hides the soft keyboard so the terminal can use the whole screen, or
+  /// brings it back. Tapping the terminal also brings it back.
+  void _toggleKeyboard(bool shown) {
+    final v = _viewKey.currentState;
+    if (v == null) return;
+    if (shown) {
+      v.closeKeyboard();
+    } else {
+      v.requestKeyboard();
+    }
+  }
+
   Future<void> _paste() async {
     final d = await Clipboard.getData(Clipboard.kTextPlain);
     final text = d?.text;
@@ -264,6 +277,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
     final s = session;
     final cs = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
+    // Read above the Scaffold: it strips the keyboard inset from its body.
+    final keyboardShown = MediaQuery.viewInsetsOf(context).bottom > 0;
     final theme = dark
         ? TerminalThemes.defaultTheme
         : TerminalThemes.whiteOnBlack;
@@ -377,6 +392,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
               },
               child: TerminalView(
                 _terminal,
+                key: _viewKey,
                 controller: _controller,
                 autofocus: true,
                 deleteDetection: true,
@@ -397,7 +413,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
               ),
             ),
           ),
-          _KeyBar(items: settings.keyBar, ctrlActive: _ctrl, onKey: _key),
+          _KeyBar(
+            items: settings.keyBar,
+            ctrlActive: _ctrl,
+            onKey: _key,
+            keyboardShown: keyboardShown,
+            onToggleKeyboard: () => _toggleKeyboard(keyboardShown),
+          ),
         ],
       ),
     );
@@ -429,11 +451,15 @@ class _KeyBar extends StatelessWidget {
     required this.items,
     required this.ctrlActive,
     required this.onKey,
+    required this.keyboardShown,
+    required this.onToggleKeyboard,
   });
 
   final List<KeyBarItem> items;
   final bool ctrlActive;
   final void Function(KeyBarItem) onKey;
+  final bool keyboardShown;
+  final VoidCallback onToggleKeyboard;
 
   @override
   Widget build(BuildContext context) {
@@ -444,35 +470,53 @@ class _KeyBar extends StatelessWidget {
         top: false,
         child: SizedBox(
           height: 44,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 6),
-            itemBuilder: (context, i) {
-              final k = items[i];
-              final active = k == KeyBarItem.ctrl && ctrlActive;
-              return Material(
-                color: active ? cs.primary : cs.surface,
-                borderRadius: BorderRadius.circular(8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => onKey(k),
-                  child: Container(
-                    constraints: const BoxConstraints(minWidth: 44),
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    alignment: Alignment.center,
-                    child: Text(
-                      k.label,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: active ? cs.onPrimary : cs.onSurface,
-                      ),
-                    ),
+          child: Row(
+            children: [
+              Expanded(
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 6,
                   ),
+                  itemCount: items.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (context, i) {
+                    final k = items[i];
+                    final active = k == KeyBarItem.ctrl && ctrlActive;
+                    return Material(
+                      color: active ? cs.primary : cs.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => onKey(k),
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: 44),
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          alignment: Alignment.center,
+                          child: Text(
+                            k.label,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: active ? cs.onPrimary : cs.onSurface,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
+              ),
+              // Pinned so it is reachable however long the key list is.
+              VerticalDivider(width: 1, indent: 8, endIndent: 8),
+              IconButton(
+                icon: Icon(
+                  keyboardShown ? Icons.keyboard_hide : Icons.keyboard,
+                ),
+                tooltip: keyboardShown ? 'Hide keyboard' : 'Show keyboard',
+                onPressed: onToggleKeyboard,
+              ),
+            ],
           ),
         ),
       ),
