@@ -2,35 +2,43 @@
 
 Target user: someone who already runs Claude Code daily and wants to start, watch, and nudge sessions on their own machine from their phone. They are comfortable with a terminal and can install Tailscale.
 
+The first version targets exactly one host platform and one phone platform:
+
+- **Host: Ubuntu** (the developer's own laptop). macOS host support comes right after; the code is written portably from day one.
+- **Phone: iPhone**, built in GitHub Actions on a macOS runner and sideloaded with a free Apple ID. Android comes after the iOS app works.
+
 The MVP is done when this works end to end:
 
-> Install the daemon on a laptop with one command. Pair the phone by scanning a QR code printed in the terminal. From the phone, browse to a project folder, start Claude Code there, give it a task, lock the phone, come back an hour later on a different network, and pick up the same session with its screen intact.
+> Install the daemon on an Ubuntu laptop with one command. Pair the iPhone by scanning a QR code printed in the terminal. From the phone, browse to a project folder, start Claude Code there, give it a task, lock the phone, come back an hour later on a different network, and pick up the same session with its screen intact.
 
 ## Scope
 
 **In**
 
-- Host daemon (Go) as a CLI, running as a user service.
-- Mobile app (Flutter) for iOS and Android.
+- Host daemon (Go) as a CLI, running as a systemd user service on Ubuntu.
+- iOS app (Flutter), sideloaded with a free Apple ID.
 - Direct connection over LAN and over Tailscale. Nothing else.
 - Any number of sessions per host, any number of hosts per phone.
+- GitHub Actions workflow that produces an unsigned `.ipa` on every tag.
 
 **Out (explicitly, until after MVP)**
 
+- macOS and Windows hosts. Design for them, ship after Ubuntu works.
+- Android build. Same Flutter code, enabled once the iOS app is usable.
 - Desktop GUI, tray app, setup wizard.
-- Native installers (.deb, .dmg, .exe). Release binaries, a Homebrew formula, and a `curl | sh` script are enough.
-- Relay server, accounts, billing, push notifications.
-- Windows host support. Design for it, ship it after Linux and macOS work.
+- Native installers (.deb, .dmg, .exe). A release binary and an install script are enough.
+- Relay server, accounts, billing, push notifications. Push is also impossible on a free Apple ID.
+- App Store / TestFlight distribution. Requires the paid Apple Developer Program.
 - Structured/chat rendering of Claude Code. Terminal only.
 - Session survival across daemon restarts. Stale sessions are marked and can be resumed with one tap via `claude --continue`.
 
-## Host side (daemon)
+## Host side (daemon, Ubuntu)
 
 ### Commands
 
 ```
 orchestrator serve              run in foreground (used by the service)
-orchestrator install            register user service (systemd --user / launchd) and start it
+orchestrator install            register systemd user unit and start it
 orchestrator uninstall
 orchestrator status             running? port? address(es)? paired devices? session count?
 orchestrator pair               print QR + code in terminal, valid 5 minutes
@@ -52,8 +60,9 @@ orchestrator logs               tail the log file
 - **Auth.** Pairing: QR carries `{addresses, port, fingerprint, code}`. Phone connects, presents code and its public key, daemon stores it. Later connections: challenge signed by the phone's key. Rate limit failures. Codes are single-use.
 - **Addresses in QR.** All non-loopback IPv4/IPv6 addresses, with Tailscale addresses marked as such so the app prefers them when off-LAN.
 - **Local admin socket.** Unix socket for CLI subcommands and hooks. No auth beyond file permissions.
-- **Service install.** systemd user unit on Linux, LaunchAgent on macOS. Restart on failure. Log file with rotation.
-- **Config.** `~/.config/orchestrator/config.toml` (XDG) / `~/Library/Application Support/orchestrator/`. Port, bind address, roots, default command, scrollback size.
+- **Service install.** systemd user unit with `Restart=on-failure`, enabled with `loginctl enable-linger` so it survives logout. Log file with rotation. The launchd equivalent is a follow-up.
+- **Config.** `~/.config/orchestrator/config.toml`. Port, bind address, roots, default command, scrollback size.
+- **Portability rule.** No Linux-only assumptions outside `internal/service/` and the PTY layer. Build must pass with `GOOS=darwin` even if untested.
 
 ### Protocol (v1)
 
@@ -86,8 +95,9 @@ Errors: `{ "t": "error", "id": <req id>, "code": "...", "message": "..." }`.
 
 - `daemon/web/` embedded xterm.js page served at `https://host:port/_debug` when `--debug` is set. Lets the daemon be built and tested fully before the app exists.
 - `go test` coverage for ring buffer, protocol framing, auth handshake, session lifecycle.
+- Linux CI job: `go vet`, `go test`, and cross-compile check for `darwin/arm64`.
 
-## Phone side (app)
+## Phone side (iOS app)
 
 ### Screens
 
@@ -101,10 +111,11 @@ Errors: `{ "t": "error", "id": <req id>, "code": "...", "message": "..." }`.
 
 - **Pairing** by QR, fallback manual entry of address, port, code, fingerprint.
 - **Connection manager.** One socket per host. On connect, try addresses in order: LAN, then Tailscale, then others. Exponential backoff on failure. Reconnect on app foreground and network change. Re-attach open terminals and replay automatically.
-- **Key storage** in Keychain / Keystore.
+- **Key storage** in the iOS Keychain.
 - **Terminal correctness.** 256 colors, true color, cursor styles, alternate screen, bracketed paste. Resize sent on rotation and keyboard show/hide.
 - **Attention.** In-app badge on the host and session card when status is *waiting*. Local notification when the app is in the background and the socket is still alive. That is all for the MVP.
 - **Stale session resume.** Card shows "Stale" with a Resume button that creates a new session in the same cwd running `claude --continue`.
+- **Free-account constraints respected.** No push entitlement, no App Groups, no iCloud. Bundle ID and signing left to the sideloading tool.
 
 ### Nice to have if cheap
 
@@ -112,21 +123,46 @@ Errors: `{ "t": "error", "id": <req id>, "code": "...", "message": "..." }`.
 - Font choice with a bundled Nerd Font for correct box drawing and icons.
 - iPad layout with sessions list beside the terminal.
 
+## Building and installing the iOS app without a Mac
+
+The developer machine is Ubuntu. Flutter cannot compile for iOS on Linux, so compilation happens on a GitHub-hosted macOS runner and signing happens on Ubuntu with a free Apple ID.
+
+**Build (GitHub Actions).** Workflow `.github/workflows/ios.yml`, triggered on tags `app-v*` and manually:
+
+1. `macos-latest` runner, checkout, install Flutter (`subosito/flutter-action`, pinned version).
+2. `flutter pub get`, `flutter build ios --release --no-codesign`.
+3. Package `build/ios/iphoneos/Runner.app` into `Payload/` and zip it as `Orchestrator-unsigned.ipa`.
+4. Upload as a workflow artifact and attach to a GitHub release.
+
+The repo is private, so macOS minutes count 10x against the free plan's 2,000 minutes, roughly 200 real minutes a month. A build is about 8 minutes, so trigger on tags only, not on every push. Making the repo public removes the cap.
+
+**Sign and install (Ubuntu).**
+
+1. On the iPhone: Settings → Privacy & Security → Developer Mode → on.
+2. Install `usbmuxd` and `libimobiledevice-utils`; plug in the phone; trust the computer.
+3. Install **iloader** (Linux x86_64 release). Sign in with a spare Apple ID created for signing, complete 2FA.
+4. Use iloader to install **SideStore** once and generate its pairing file with `idevice_pair`. SideStore refreshes sideloaded apps on the phone every few days so the 7-day certificate does not lapse.
+5. Download the unsigned IPA from the release and install it through iloader (or directly through SideStore on the phone). Repeat for every new build.
+
+Fallback if iloader breaks: **Sideloader** (Dadoum) CLI does the same signing and install from Linux.
+
+**Known limits of this path.** Certificate lasts 7 days (SideStore refreshes it), at most 3 sideloaded apps, no push notifications, no TestFlight. Both signing tools depend on Apple's private developer endpoints and can break after Apple-side changes.
+
 ## Installation story (MVP)
 
-**Host**
+**Host (Ubuntu)**
 
 ```
-curl -fsSL https://orchestrator.dev/install.sh | sh   # or: brew install <tap>/orchestrator
+curl -fsSL https://raw.githubusercontent.com/markusbug/Orchestrator/main/scripts/install.sh | sh
 orchestrator install
 orchestrator pair
 ```
 
-Tailscale is documented as the way to reach the laptop from outside the LAN. The pair output says whether a Tailscale address was found.
+The install script downloads the latest release binary for `linux/amd64` or `linux/arm64` into `~/.local/bin`. Tailscale is documented as the way to reach the laptop from outside the LAN. The pair output says whether a Tailscale address was found.
 
-**Phone**
+**Phone (iPhone)**
 
-TestFlight and Play internal testing links. Public store listings after the MVP proves itself.
+Unsigned IPA from GitHub releases, installed via iloader/SideStore as described above.
 
 ## Acceptance checklist
 
@@ -137,13 +173,17 @@ TestFlight and Play internal testing links. Public store listings after the MVP 
 - [ ] Claude asks a permission question; the session card shows *waiting* within 2 seconds.
 - [ ] Kill and restart the daemon; sessions show as stale; Resume starts `claude --continue` in the right folder.
 - [ ] Revoke a phone from the CLI; that phone is disconnected and cannot reconnect.
-- [ ] Both Linux and macOS hosts pass the above.
+- [ ] Daemon survives logout and reboot on Ubuntu (linger enabled) and comes back with stale sessions listed.
+- [ ] A tagged commit produces an installable unsigned IPA from GitHub Actions in under 10 macOS minutes.
+- [ ] `GOOS=darwin go build ./...` succeeds even though macOS is not yet tested.
 
 ## Build order
 
-1. Daemon: session manager, ring buffer, WebSocket protocol, debug web page. Verify with a browser.
-2. Daemon: TLS, pairing, auth, fs API, service install, CLI.
-3. App: pairing, connection manager, hosts, sessions list, terminal view.
-4. App: folder picker, new session flow, settings.
-5. Daemon: hooks-based attention, conversation list, stale resume. App: badges, notifications, resume button.
-6. Release scripts, install script, Homebrew tap, TestFlight and Play internal tracks.
+1. Daemon: session manager, ring buffer, WebSocket protocol, debug web page. Verify with a browser on Ubuntu.
+2. Daemon: TLS, pairing, auth, fs API, systemd install, CLI. Linux CI with tests and darwin cross-compile check.
+3. Repo: Flutter project skeleton, iOS workflow producing an unsigned IPA. Sideload the empty app once to prove the pipeline before writing UI.
+4. App: pairing, connection manager, hosts, sessions list, terminal view.
+5. App: folder picker, new session flow, settings.
+6. Daemon: hooks-based attention, conversation list, stale resume. App: badges, local notifications, resume button.
+7. Release: goreleaser for the daemon, install script, tagged app builds.
+8. After MVP: macOS host (launchd), Android build, then the rest of PLAN.md.
