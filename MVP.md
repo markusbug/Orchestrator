@@ -12,6 +12,48 @@ The MVP is done when this works end to end:
 
 > Install the daemon on an Ubuntu laptop with one command. Pair the iPhone by scanning a QR code printed in the terminal. From the phone, on the same Wi-Fi, browse to a project folder, start Claude Code there, give it a task, lock the phone, come back an hour later, and pick up the same session with its screen intact.
 
+## Progress
+
+Updated 2026-09-05. Tick items here as they land so this file stays the single source of truth for what the MVP still needs.
+
+### Host daemon (Ubuntu) — done
+
+- [x] Session manager: PTY spawn, 1 MB scrollback, multi-attach, resize with SIGWINCH nudge, kill, rename, remove, exit codes, output preview
+- [x] Status machine running / waiting / exited / stale; graceful shutdown records sessions as stale
+- [x] Claude Code integration: `--session-id` at launch, `--settings` hooks file, Notification / Stop / UserPromptSubmit hooks → status, bell fallback, `session.resume` with `--resume`, conversation list from `~/.claude/projects`
+- [x] Protocol v1: JSON envelopes with `rid`, binary PTY frames with per-run handles, events (`session.event`, `session.removed`, `session.detached`)
+- [x] TLS with persisted self-signed cert and fingerprint; QR pairing with single-use 6-digit code (5 min, 5 attempts); Ed25519 challenge auth bound to nonces, fingerprint, and device id; per-IP lockout; device revoke
+- [x] Filesystem API under allow-listed roots (list, search, recents) with symlink-escape protection
+- [x] SQLite metadata store (sessions, devices, recents); all non-exited sessions marked stale on startup
+- [x] Local admin socket for the CLI and hooks; short-path fallback for long config dirs
+- [x] CLI: `serve`, `install`, `uninstall`, `status`, `pair` (terminal QR), `devices [revoke]`, `sessions [kill|remove]` with id prefixes, `logs`, `_hook`
+- [x] systemd user unit with the installer's PATH and linger (implemented; not yet run on the dev laptop)
+- [x] Embedded xterm.js debug client at `/_debug/` with loopback auto-auth under `--debug`
+- [x] Tests: unit tests per package, WebSocket integration tests, race-clean; `go test -tags live` end-to-end against a running daemon with real Claude Code (hooks, reconnect replay, kill verified)
+- [x] CI: gofmt, vet, race tests, darwin/arm64 and linux/arm64 cross-compile, Linux binary artifact — green on `main`
+
+### Host daemon — remaining for MVP
+
+- [ ] Run `orchestrator install` on the dev laptop and confirm it survives logout and reboot (acceptance item)
+- [ ] Release pipeline: goreleaser config, `scripts/install.sh`, first tagged `linux/amd64` + `linux/arm64` binaries (build order step 7)
+- [ ] Local notification path for the app relies on nothing server-side; no work needed
+
+### iOS app — not started
+
+- [ ] Flutter project skeleton in `app/` (build order step 3)
+- [ ] `.github/workflows/ios.yml` producing an unsigned IPA on `app-v*` tags; sideload once via iloader/SideStore to prove the pipeline
+- [ ] Pairing by QR + manual entry; keys in Keychain; fingerprint pinning
+- [ ] Connection manager: one socket per host, LAN address first, backoff, reconnect on foreground and network change, auto re-attach with replay
+- [ ] Hosts screen, Sessions screen with waiting badge and preview, kill / rename / remove
+- [ ] New session flow: recents, breadcrumb browser, search, command sheet with resume list
+- [ ] Terminal screen: xterm, key bar (Esc, Tab, sticky Ctrl, arrows, /, ⇧Tab, paste), pinch zoom, copy, swipe between sessions
+- [ ] Settings: font, theme, key bar order, haptics, per-host rename / forget
+- [ ] Stale resume button; in-app badges; local notification while backgrounded and connected
+
+### Acceptance checklist status
+
+See the checklist below. Host-only items that can already be verified: sessions survive the app closing (daemon holds them), 10 concurrent sessions, hook-driven *waiting* within 2 seconds, revoke disconnects, daemon restart marks sessions stale and resume works, darwin cross-compile passes, CI produces a binary. Everything involving the phone waits on the app.
+
 ## Scope
 
 **In**
@@ -196,6 +238,6 @@ Unsigned IPA from GitHub releases, installed via iloader/SideStore as described 
 3. Repo: Flutter project skeleton, iOS workflow producing an unsigned IPA. Sideload the empty app once to prove the pipeline before writing UI.
 4. App: pairing, connection manager, hosts, sessions list, terminal view.
 5. App: folder picker, new session flow, settings.
-6. Daemon: hooks-based attention, conversation list, stale resume. App: badges, local notifications, resume button.
+6. Daemon: ✅ hooks-based attention, conversation list, stale resume. App: badges, local notifications, resume button.
 7. Release: goreleaser for the daemon, install script, tagged app builds.
 8. After MVP: macOS host (launchd), Android build, then the rest of PLAN.md.
