@@ -383,6 +383,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 // The return key submits (carriage return, like a hardware
                 // Enter); the key bar has a "New line" key for a line feed.
                 textInputAction: TextInputAction.send,
+                // Plain text layout: the default email layout adds "@" next
+                // to the space bar and shrinks it.
+                keyboardType: TextInputType.text,
                 theme: theme,
                 textStyle: TerminalStyle(
                   fontSize: _fontSize,
