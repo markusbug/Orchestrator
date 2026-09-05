@@ -169,6 +169,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
         t.textInput('/');
       case KeyBarItem.enter:
         t.keyInput(TerminalKey.enter);
+      case KeyBarItem.newline:
+        // A bare line feed: Claude Code inserts a newline instead of
+        // submitting, and shells accept it as Enter.
+        t.textInput('\n');
       case KeyBarItem.ctrlC:
         t.charInput('c'.codeUnitAt(0), ctrl: true);
       case KeyBarItem.paste:
@@ -376,6 +380,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
                 controller: _controller,
                 autofocus: true,
                 deleteDetection: true,
+                // The return key submits (carriage return, like a hardware
+                // Enter); the key bar has a "New line" key for a line feed.
+                textInputAction: TextInputAction.send,
                 theme: theme,
                 textStyle: TerminalStyle(
                   fontSize: _fontSize,

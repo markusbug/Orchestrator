@@ -22,7 +22,7 @@ make build
 ./bin/orchestrator install            # run as a systemd user service instead
 ```
 
-The TLS certificate is self-signed; the phone pins its fingerprint at pairing time, and the browser will ask you to accept it once. `--debug` skips authentication for connections from the same machine, so only use it on a machine you trust.
+Developer note: if a firewall is active on the host (`ufw status`), allow the port with `sudo ufw allow 7391/tcp`, otherwise the phone's connection is silently dropped. Users of the finished product will never do this; the daemon will connect outbound through a relay with a public API so everything works out of the box (see PLAN.md, Connectivity). The TLS certificate is self-signed; the phone pins its fingerprint at pairing time, and the browser will ask you to accept it once. `--debug` skips authentication for connections from the same machine, so only use it on a machine you trust.
 
 ## Try the app
 

@@ -57,7 +57,10 @@ class _PairScreenState extends State<PairScreen> {
       setState(() {
         _busy = false;
         _handled = false;
-        _error = e.toString().replaceFirst(RegExp(r'^\w+Error: '), '');
+        _error = e.toString().replaceFirst(
+          RegExp(r'^\w+(Error|Exception): '),
+          '',
+        );
       });
     }
   }

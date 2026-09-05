@@ -191,10 +191,9 @@ class HostConnection extends ChangeNotifier {
   }
 
   static String _describe(Object e) {
-    final s = e.toString();
-    if (s.contains('SocketException')) return 'host unreachable';
     if (e is TimeoutException) return 'connection timed out';
-    return s.replaceFirst('Exception: ', '');
+    if (e.toString().contains('SocketException')) return 'host unreachable';
+    return e.toString().replaceFirst('Exception: ', '');
   }
 
   Future<HostClient> _connectOnce() async {

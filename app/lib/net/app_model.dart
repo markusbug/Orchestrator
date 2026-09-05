@@ -13,6 +13,34 @@ import '../services/settings.dart';
 import 'host_client.dart';
 import 'host_connection.dart';
 
+/// Pairing could not reach the host on any address.
+class PairException implements Exception {
+  PairException(this.port, this.failures);
+
+  final int port;
+  final List<String> failures;
+
+  @override
+  String toString() {
+    if (failures.isEmpty) return 'no address to connect to';
+    return 'Could not reach port $port on any address. '
+        'Check that the phone is on the same Wi-Fi and that the host '
+        'firewall allows the port (ufw: `sudo ufw allow $port/tcp`).\n'
+        '${failures.map((f) => '• $f').join('\n')}';
+  }
+}
+
+/// Short human text for a connection error.
+String describeError(Object e) {
+  final s = e.toString();
+  if (e is TimeoutException) return 'timed out';
+  if (e is FingerprintMismatch) return 'certificate does not match';
+  final m = RegExp(r'OS Error: ([^,]+)').firstMatch(s);
+  if (m != null) return m.group(1)!.toLowerCase();
+  if (s.contains('SocketException')) return 'unreachable';
+  return s.replaceFirst(RegExp(r'^\w+(Exception|Error): '), '');
+}
+
 /// Root state: paired hosts and their connections. Reconnects everything on
 /// app foreground and on network changes.
 class AppModel extends ChangeNotifier with WidgetsBindingObserver {
@@ -102,7 +130,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
     if (p.fingerprint.isEmpty) throw ArgumentError('fingerprint missing');
     if (p.addrs.isEmpty) throw ArgumentError('no address to connect to');
     final key = await DeviceKey.generate();
-    Object? lastErr;
+    final failures = <String>[];
     for (final addr in p.addrs) {
       HostClient c;
       try {
@@ -112,7 +140,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
           fingerprint: p.fingerprint,
         );
       } catch (e) {
-        lastErr = e;
+        failures.add('${addr.ip}: ${describeError(e)}');
         continue;
       }
       try {
@@ -148,7 +176,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
         await c.close();
       }
     }
-    throw lastErr ?? StateError('could not reach the host');
+    throw PairException(p.port, failures);
   }
 
   Future<void> renameHost(String id, String name) async {

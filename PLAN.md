@@ -76,6 +76,12 @@ Single WebSocket per (client, host). After TLS + auth handshake:
 2. **Remote via VPN (M1).** Tailscale/WireGuard/ZeroTier make the host reachable anywhere with zero Orchestrator infrastructure. The desktop app detects Tailscale and shows the stable tailnet address in the QR. Documented as the recommended remote path.
 3. **Relay (later).** Optional hosted or self-hosted relay: daemon opens an outbound WSS, phone connects to the relay by host id, relay forwards opaque frames. End-to-end encrypted with the pairing keys so the relay is a dumb pipe. Also the natural place to fan out push notifications.
 
+**Zero network configuration is a product requirement.** A user must never open a port, edit a firewall, or read an IP address to use Orchestrator. The first phone pairing on the developer's laptop failed because `ufw` silently dropped the daemon's port; that is exactly the class of problem end users will not diagnose. The path out of it:
+
+- **Short term (MVP):** the installer and `orchestrator status` detect an active host firewall (`ufw`, `firewalld`, Windows Defender Firewall, macOS application firewall) and either add the allow rule during `orchestrator install` (with a clear prompt) or print the exact command. The app's pairing error names the firewall as the likely cause.
+- **Real fix:** the daemon opens an *outbound* connection, so nothing listens on the host and no inbound rule is ever needed. That is the relay in item 3, and it is the default connection path once it exists. LAN direct becomes an optimisation the app tries first, not something the user has to make work.
+- **Public API:** the relay is fronted by a documented API (host registration, device pairing, session events, opaque frame forwarding) so that the phone app, the desktop app, and third-party integrations all use the same contract. Self-hosting the relay stays possible; the hosted one is what makes it work out of the box.
+
 ### 2.5 Security model
 
 - The daemon runs as the logged-in user with that user's full privileges. Anyone holding a device key has the user's shell. Therefore: keys live in Keychain/Keystore, pairing codes expire in 5 minutes and are single-use, failed auth is rate-limited, every device is listed and revocable.

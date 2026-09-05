@@ -35,6 +35,7 @@ Updated 2026-09-05. Tick items here as they land so this file stays the single s
 ### Host daemon — remaining for MVP
 
 - [ ] Run `orchestrator install` on the dev laptop and confirm it survives logout and reboot (acceptance item)
+- [ ] Firewall handling: `install` detects an active `ufw`/firewalld deny-incoming policy and adds the allow rule (or prints the exact command); `status` warns when the port is blocked. Found during the first phone pairing: ufw silently dropped port 7391. This is a stopgap; end users must never touch ports, see PLAN.md 2.4 for the outbound relay and API that make it work out of the box.
 - [ ] Release pipeline: goreleaser config, `scripts/install.sh`, first tagged `linux/amd64` + `linux/arm64` binaries (build order step 7)
 - [ ] Local notification path for the app relies on nothing server-side; no work needed
 
@@ -43,8 +44,8 @@ Updated 2026-09-05. Tick items here as they land so this file stays the single s
 Flutter project in `app/`, verified on Ubuntu with `flutter analyze`, `flutter test` (fake daemon over TLS), and `test/live_test.dart` against the real Go daemon (pair, auth, create, attach, replay, resize, rename, kill, resume, remove). Not yet built for iOS or run on a phone.
 
 - [x] Flutter project skeleton in `app/` (build order step 3)
+- [x] First IPA built by `ios.yml` (5 min) and sideloaded with iloader 2.3.1 on 2026-09-05; Developer Mode prompt on iOS 26 behaves as documented
 - [x] `.github/workflows/ios.yml` producing an unsigned IPA on `app-v*` tags; `.github/workflows/app.yml` runs format, analyze, and tests on Linux
-- [ ] Sideload once via iloader/SideStore to prove the pipeline (needs the first `app-v*` tag and the phone)
 - [x] Pairing by QR (`mobile_scanner`) + manual entry; Ed25519 keys in the Keychain (`flutter_secure_storage`); fingerprint pinning with system roots disabled
 - [x] Connection manager: one socket per host, last-good then LAN then Tailscale, exponential backoff with jitter, reconnect on foreground and network change, ping probe, auto re-attach with replay
 - [x] Hosts screen (online dot, running/waiting counts, waiting badge, rename/forget), Sessions screen (sorted cards, preview, swipe to kill/remove, long-press rename, pull to refresh)
@@ -52,7 +53,8 @@ Flutter project in `app/`, verified on Ubuntu with `flutter analyze`, `flutter t
 - [x] Terminal screen: xterm.dart, key bar (Esc, Tab, sticky Ctrl, arrows, /, ⇧Tab, paste, and optional ^C / Enter), pinch zoom, copy selection, swipe on the title bar between sessions, force kill
 - [x] Settings: font size, theme, key bar order, haptics, notifications, device name, per-host rename / forget
 - [x] Stale resume button; in-app badges; local notification while backgrounded and connected (`flutter_local_notifications`)
-- [ ] On-device pass: keyboard/resize behaviour, notification permission prompt, camera prompt, local-network prompt
+- [x] On-device: pairing, permissions, and the terminal work on an iPhone 17 / iOS 26. First bug found and fixed: the soft keyboard's return key inserted a line feed, which Claude Code treats as "new line", so prompts could not be submitted. `xterm` 4.0.0 is vendored in `app/third_party/xterm` with a small patch (see its PATCHES.md) so the return key is "Send" (carriage return) and the key bar has a "New line" key.
+- [ ] On-device pass continues: resize on rotation and keyboard show/hide, notifications in the background, reconnect after Wi-Fi toggling, 10 sessions
 
 ### Acceptance checklist status
 
@@ -70,7 +72,7 @@ See the checklist below. Host-only items that can already be verified: sessions 
 
 **Out (explicitly, until after MVP)**
 
-- Remote access from outside the LAN (Tailscale first, relay later).
+- Remote access from outside the LAN (Tailscale first, relay later). The relay is also what removes every firewall and port step for end users; the MVP's `ufw allow` hint is developer-only scaffolding, not the product.
 - macOS and Windows hosts. Design for them, ship after Ubuntu works.
 - Android build. Same Flutter code, enabled once the iOS app is usable.
 - Desktop GUI, tray app, setup wizard.
@@ -216,7 +218,7 @@ orchestrator install
 orchestrator pair
 ```
 
-The install script downloads the latest release binary for `linux/amd64` or `linux/arm64` into `~/.local/bin`. Until it exists, `make build` in the repo produces `bin/orchestrator`. The phone must be on the same network as the host; the pair output prints every address it found.
+The install script downloads the latest release binary for `linux/amd64` or `linux/arm64` into `~/.local/bin`. If `ufw` is active with the default deny-incoming policy, the port must be opened (`sudo ufw allow 7391/tcp`); `orchestrator status` and the install script should print this hint when they detect an active firewall. Until it exists, `make build` in the repo produces `bin/orchestrator`. The phone must be on the same network as the host; the pair output prints every address it found.
 
 **Phone (iPhone)**
 

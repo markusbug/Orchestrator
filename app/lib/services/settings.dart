@@ -15,8 +15,9 @@ enum KeyBarItem {
   slash('/'),
   shiftTab('⇧Tab'),
   paste('Paste'),
+  newline('New line'),
   ctrlC('^C'),
-  enter('⏎');
+  enter('Enter');
 
   const KeyBarItem(this.label);
   final String label;
@@ -29,6 +30,7 @@ enum KeyBarItem {
     down,
     left,
     right,
+    newline,
     slash,
     shiftTab,
     paste,
