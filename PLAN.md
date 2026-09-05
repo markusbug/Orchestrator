@@ -74,7 +74,7 @@ Single WebSocket per (client, host). After TLS + auth handshake:
 
 1. **LAN (M1).** Phone connects directly to the host IP/port from the QR. mDNS advertisement (`_orchestrator._tcp`) so the app can rediscover a host whose IP changed.
 2. **Remote via VPN (M1).** Tailscale/WireGuard/ZeroTier make the host reachable anywhere with zero Orchestrator infrastructure. The desktop app detects Tailscale and shows the stable tailnet address in the QR. Documented as the recommended remote path.
-3. **Relay (later).** Optional hosted or self-hosted relay: daemon opens an outbound WSS, phone connects to the relay by host id, relay forwards opaque frames. End-to-end encrypted with the pairing keys so the relay is a dumb pipe. Also the natural place to fan out push notifications.
+3. **Relay (later).** Design in [docs/RELAY.md](docs/RELAY.md). Optional hosted or self-hosted relay: daemon opens an outbound WSS, phone connects to the relay by host id, relay forwards opaque frames. End-to-end encrypted with the pairing keys so the relay is a dumb pipe. Also the natural place to fan out push notifications.
 
 **Zero network configuration is a product requirement.** A user must never open a port, edit a firewall, or read an IP address to use Orchestrator. The first phone pairing on the developer's laptop failed because `ufw` silently dropped the daemon's port; that is exactly the class of problem end users will not diagnose. The path out of it:
 
