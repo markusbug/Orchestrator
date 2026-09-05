@@ -10,7 +10,7 @@ See [PLAN.md](PLAN.md) for the architecture, milestones, and packaging plan.
 
 ## Status
 
-The host daemon (Go, `daemon/`) runs on Ubuntu. The phone app (Flutter, `app/`) is implemented and tested against the daemon on Linux; it has not been sideloaded to an iPhone yet. See [MVP.md](MVP.md) for what is left.
+The MVP works end to end over the local network: the host daemon (Go, `daemon/`) runs on Ubuntu, and the iOS app (Flutter, `app/`), built as an unsigned IPA by GitHub Actions and sideloaded with iloader, pairs with it by QR code, starts Claude Code in a chosen folder, and drives it from the phone. Verified on an iPhone 17 on 2026-09-05 with build `app-v0.1.2`. See [MVP.md](MVP.md) for what is left before a release.
 
 ## Try the daemon
 

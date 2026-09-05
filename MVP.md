@@ -39,9 +39,11 @@ Updated 2026-09-05. Tick items here as they land so this file stays the single s
 - [ ] Release pipeline: goreleaser config, `scripts/install.sh`, first tagged `linux/amd64` + `linux/arm64` binaries (build order step 7)
 - [ ] Local notification path for the app relies on nothing server-side; no work needed
 
-### iOS app — implemented, not yet sideloaded
+### iOS app — installed and working on the phone
 
-Flutter project in `app/`, verified on Ubuntu with `flutter analyze`, `flutter test` (fake daemon over TLS), and `test/live_test.dart` against the real Go daemon (pair, auth, create, attach, replay, resize, rename, kill, resume, remove). Not yet built for iOS or run on a phone.
+Flutter project in `app/`, verified on Ubuntu with `flutter analyze`, `flutter test` (fake daemon over TLS), and `test/live_test.dart` against the real Go daemon (pair, auth, create, attach, replay, resize, rename, kill, resume, remove).
+
+**On-device result (2026-09-05):** the `app-v0.1.2` IPA from GitHub Actions was signed and installed with iloader 2.3.1 from Ubuntu on an iPhone 17 (iOS 26.6.1). Over the local Wi-Fi, the phone paired with the laptop daemon, listed sessions, started Claude Code in a chosen folder, and drove it from the terminal with prompts submitted from the on-screen keyboard. **The MVP end-to-end flow works over the local network.** Three tagged builds were made in one evening (v0.1.0 pipeline proof, v0.1.1 return key submits + New line key, v0.1.2 plain keyboard layout), each about 4 minutes of macOS runner time.
 
 - [x] Flutter project skeleton in `app/` (build order step 3)
 - [x] First IPA built by `ios.yml` (5 min) and sideloaded with iloader 2.3.1 on 2026-09-05; Developer Mode prompt on iOS 26 behaves as documented
@@ -58,7 +60,7 @@ Flutter project in `app/`, verified on Ubuntu with `flutter analyze`, `flutter t
 
 ### Acceptance checklist status
 
-See the checklist below. Host-only items that can already be verified: sessions survive the app closing (daemon holds them), 10 concurrent sessions, hook-driven *waiting* within 2 seconds, revoke disconnects, daemon restart marks sessions stale and resume works, darwin cross-compile passes, CI produces a binary. The app code for every phone item exists and is exercised against the real daemon by `app/test/live_test.dart`; ticking those items needs the IPA on a phone.
+See the checklist below. Ticked items were verified by hand on 2026-09-05 with the phone on the same Wi-Fi as the laptop. Host-only items that can already be verified from the daemon tests: sessions survive the app closing (daemon holds them), 10 concurrent sessions, hook-driven *waiting* within 2 seconds, revoke disconnects, daemon restart marks sessions stale and resume works. The unticked phone items have working code (exercised against the real daemon by `app/test/live_test.dart`) but have not been walked through on the device yet.
 
 ## Scope
 
@@ -226,7 +228,7 @@ Unsigned IPA from GitHub releases, installed via iloader/SideStore as described 
 
 ## Acceptance checklist
 
-- [ ] Start a Claude Code session from the phone in a chosen folder in 3 taps from the host screen.
+- [x] Start a Claude Code session from the phone in a chosen folder in 3 taps from the host screen. (Verified on the iPhone 2026-09-05.)
 - [ ] Close the app, wait 10 minutes, reopen, and the session is still running with its screen restored.
 - [ ] Turn Wi-Fi off and on again on the phone; app reconnects within 10 seconds without user action.
 - [ ] Run 10 sessions concurrently on the host; list and switching remain responsive.
@@ -234,8 +236,8 @@ Unsigned IPA from GitHub releases, installed via iloader/SideStore as described 
 - [ ] Kill and restart the daemon; sessions show as stale; Resume starts `claude --continue` in the right folder.
 - [ ] Revoke a phone from the CLI; that phone is disconnected and cannot reconnect.
 - [ ] Daemon survives logout and reboot on Ubuntu (linger enabled) and comes back with stale sessions listed.
-- [ ] A tagged commit produces an installable unsigned IPA from GitHub Actions in under 10 macOS minutes.
-- [ ] `GOOS=darwin go build ./...` succeeds even though macOS is not yet tested.
+- [x] A tagged commit produces an installable unsigned IPA from GitHub Actions in under 10 macOS minutes. (app-v0.1.0 to v0.1.2: about 4 minutes each; installed with iloader.)
+- [x] `GOOS=darwin go build ./...` succeeds even though macOS is not yet tested. (Checked in CI on every daemon change.)
 
 ## Build order
 
