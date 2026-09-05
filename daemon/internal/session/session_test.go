@@ -68,8 +68,13 @@ func TestSpawnAttachWriteKill(t *testing.T) {
 	if info.Status != protocol.StatusExited || info.ExitCode == nil {
 		t.Fatalf("%+v", info)
 	}
-	if _, err := sub.Next(context.Background()); err != ErrSubscriberClosed {
-		t.Fatalf("want closed, got %v", err)
+	// pending output is delivered before the terminal error
+	var nerr error
+	for nerr == nil {
+		_, nerr = sub.Next(context.Background())
+	}
+	if nerr != ErrSubscriberClosed {
+		t.Fatalf("want closed, got %v", nerr)
 	}
 	if err := s.Write([]byte("x")); err != ErrNotRunning {
 		t.Fatal(err)
