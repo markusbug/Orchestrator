@@ -1,0 +1,33 @@
+# Go
+daemon/bin/
+daemon/dist/
+*.test
+*.out
+
+# Flutter / Dart
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/**/Pods/
+app/**/*.iml
+app/ios/Flutter/ephemeral/
+app/macos/Flutter/ephemeral/
+app/linux/flutter/ephemeral/
+app/windows/flutter/ephemeral/
+
+# Packaging outputs
+packaging/out/
+dist/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Secrets
+*.pem
+*.p12
+*.keystore
+.env
