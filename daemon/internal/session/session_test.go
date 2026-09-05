@@ -82,11 +82,18 @@ func TestSpawnAttachWriteKill(t *testing.T) {
 	if s.Info().Preview == "" {
 		t.Fatal("preview empty")
 	}
-	emu.Lock()
-	n, last := len(events), events[len(events)-1]
-	emu.Unlock()
-	if n < 2 || last.Session.Status != protocol.StatusExited {
-		t.Fatalf("events %+v", last)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		emu.Lock()
+		n, last := len(events), events[len(events)-1]
+		emu.Unlock()
+		if n >= 2 && last.Session.Status == protocol.StatusExited {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no exit event; last %+v", last)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	if err := m.Remove(context.Background(), s.ID); err != nil {
 		t.Fatal(err)

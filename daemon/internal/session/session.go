@@ -522,8 +522,10 @@ func (s *Session) readLoop() {
 		_ = s.mgr.opts.Store.UpdateSessionStatus(context.Background(), s.ID, final, &code)
 		_ = s.mgr.opts.Store.TouchSession(context.Background(), s.ID, time.Now())
 	}
-	close(s.done)
+	// Notify listeners before releasing Done so anyone waiting on Done
+	// observes the final status and its event.
 	s.mgr.emit(Event{Kind: "changed", Session: s.Info()})
+	close(s.done)
 }
 
 // Attach registers a subscriber and returns it with a scrollback snapshot
