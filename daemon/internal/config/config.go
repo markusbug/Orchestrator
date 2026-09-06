@@ -19,9 +19,8 @@ import (
 const maxSockPath = 96
 
 // DefaultRelayURL is the hosted relay every daemon uses unless configured
-// otherwise. Empty until the hosted relay exists; then the relay is on by
-// default and `orchestrator relay off` opts out.
-const DefaultRelayURL = ""
+// otherwise. The relay is on by default; `orchestrator relay off` opts out.
+const DefaultRelayURL = "https://relay.markushaas.com"
 
 // Config is the on-disk configuration (config.toml). All fields optional.
 type Config struct {
