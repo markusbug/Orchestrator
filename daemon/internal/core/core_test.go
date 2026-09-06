@@ -121,3 +121,43 @@ func TestOutsideRootRejected(t *testing.T) {
 		t.Fatal("cwd outside roots accepted")
 	}
 }
+
+func TestAddrsIncludeRelayWhenActive(t *testing.T) {
+	dir := t.TempDir()
+	paths, err := config.DefaultPaths(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults(paths.Home)
+	cfg.Roots = []string{dir}
+	cfg.Relay = config.RelayConfig{Enabled: true, URL: "https://relay.example"}
+	c, err := Open(context.Background(), paths, cfg, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if len(c.HostID) != 32 {
+		t.Fatalf("host id %q", c.HostID)
+	}
+	var relay *protocol.HostAddr
+	for i, a := range c.Addrs() {
+		if a.Kind == protocol.AddrRelay {
+			relay = &c.Addrs()[i]
+		}
+	}
+	if relay == nil || relay.IP != c.HostID+".relay.example" || relay.Port != 443 {
+		t.Fatalf("relay addr %+v", relay)
+	}
+	if info := c.HostInfo(); info.Relay == nil || info.Relay.URL != "https://relay.example" {
+		t.Fatalf("host info %+v", info.Relay)
+	}
+	c.Cfg.Relay.Enabled = false
+	for _, a := range c.Addrs() {
+		if a.Kind == protocol.AddrRelay {
+			t.Fatal("relay addr present while disabled")
+		}
+	}
+	if c.HostInfo().Relay != nil {
+		t.Fatal("relay info present while disabled")
+	}
+}

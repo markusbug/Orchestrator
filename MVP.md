@@ -36,7 +36,8 @@ Updated 2026-09-05. Tick items here as they land so this file stays the single s
 
 - [ ] Run `orchestrator install` on the dev laptop and confirm it survives logout and reboot (acceptance item)
 - [ ] Firewall handling: `install` detects an active `ufw`/firewalld deny-incoming policy and adds the allow rule (or prints the exact command); `status` warns when the port is blocked. Found during the first phone pairing: ufw silently dropped port 7391. This is a stopgap; end users must never touch ports, see PLAN.md 2.4 for the outbound relay and API that make it work out of the box.
-- [ ] Release pipeline: goreleaser config, `scripts/install.sh`, first tagged `linux/amd64` + `linux/arm64` binaries (build order step 7)
+- [ ] Release pipeline: goreleaser config, `scripts/install.sh`, first tagged `linux/amd64` + `linux/arm64` binaries (build order step 7). The relay already has its own: `relay-v*` tags build and release `relay_linux_{amd64,arm64}` via `.github/workflows/relay.yml`.
+- [x] Relay (post-MVP item pulled forward, 2026-09-06): `daemon/cmd/relay`, daemon-side client, `orchestrator relay` CLI, `deploy/relay/` unit + install script, app dials relay-kind addresses. See docs/RELAY.md. Not yet deployed to a VPS.
 - [ ] Local notification path for the app relies on nothing server-side; no work needed
 
 ### iOS app — installed and working on the phone

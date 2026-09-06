@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"crypto/ed25519"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,23 +12,29 @@ import (
 	"time"
 
 	"github.com/markusbug/Orchestrator/daemon/internal/auth"
+	"github.com/markusbug/Orchestrator/daemon/internal/buildinfo"
 	"github.com/markusbug/Orchestrator/daemon/internal/claude"
 	"github.com/markusbug/Orchestrator/daemon/internal/config"
 	"github.com/markusbug/Orchestrator/daemon/internal/fsapi"
 	"github.com/markusbug/Orchestrator/daemon/internal/netaddr"
 	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
+	"github.com/markusbug/Orchestrator/daemon/internal/relay/client"
+	"github.com/markusbug/Orchestrator/daemon/internal/relay/wire"
 	"github.com/markusbug/Orchestrator/daemon/internal/session"
 	"github.com/markusbug/Orchestrator/daemon/internal/store"
 )
 
-// Version is set by the build.
-var Version = "dev"
+// Version is the daemon build version (stamped into buildinfo at link time).
+var Version = buildinfo.Version
 
 // Core holds everything the daemon needs at runtime.
 type Core struct {
 	Cfg       config.Config
 	Paths     config.Paths
 	Identity  auth.Identity
+	HostKey   ed25519.PrivateKey // relay identity
+	HostID    string             // derived from HostKey
+	Relay     *client.Client     // set by serve when the relay is active
 	Codes     *auth.Codes
 	Limiter   *auth.Limiter
 	Store     *store.Store
@@ -53,6 +60,10 @@ func Open(ctx context.Context, paths config.Paths, cfg config.Config, debug bool
 		host = "orchestrator"
 	}
 	id, err := auth.EnsureTLS(paths.CertFile, paths.KeyFile, host)
+	if err != nil {
+		return nil, err
+	}
+	hostKey, err := auth.EnsureHostKey(paths.HostKeyFile)
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +99,7 @@ func Open(ctx context.Context, paths config.Paths, cfg config.Config, debug bool
 	}
 	return &Core{
 		Cfg: cfg, Paths: paths, Identity: id,
+		HostKey: hostKey, HostID: wire.HostID(hostKey.Public().(ed25519.PublicKey)),
 		Codes:   auth.NewCodes(nil),
 		Limiter: auth.NewLimiter(5, 10*time.Minute, 10*time.Minute, nil),
 		Store:   st, Mgr: mgr, FS: fs, Hostname: host, Exe: exe,
@@ -110,15 +122,33 @@ func (c *Core) Close() {
 	c.Store.Close()
 }
 
-// Addrs lists reachable addresses.
-func (c *Core) Addrs() []protocol.HostAddr { return netaddr.List() }
+// Addrs lists reachable addresses: LAN and Tailscale first, then the relay
+// name when a relay is configured.
+func (c *Core) Addrs() []protocol.HostAddr {
+	addrs := netaddr.List()
+	if r := c.RelayInfo(); r != nil {
+		addrs = append(addrs, protocol.HostAddr{IP: r.Addr, Kind: protocol.AddrRelay, Port: r.Port})
+	}
+	return addrs
+}
+
+// RelayInfo describes the relay path, or nil when no relay is configured.
+func (c *Core) RelayInfo() *protocol.RelayInfo {
+	if !c.Cfg.Relay.Active() {
+		return nil
+	}
+	return &protocol.RelayInfo{
+		URL: c.Cfg.Relay.URL, HostID: c.HostID,
+		Addr: wire.Addr(c.HostID, c.Cfg.Relay.Domain()), Port: c.Cfg.Relay.Port(),
+	}
+}
 
 // HostInfo describes this host to clients.
 func (c *Core) HostInfo() protocol.HostInfo {
 	return protocol.HostInfo{
 		Host: c.Hostname, Version: Version, Fingerprint: c.Identity.Fingerprint,
 		Port: c.Cfg.Port, Addrs: c.Addrs(), Roots: c.FS.Roots(),
-		DefaultCmd: c.Cfg.DefaultCommand, Home: c.Paths.Home,
+		DefaultCmd: c.Cfg.DefaultCommand, Home: c.Paths.Home, Relay: c.RelayInfo(),
 	}
 }
 

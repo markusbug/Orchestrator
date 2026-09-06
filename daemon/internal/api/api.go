@@ -16,8 +16,24 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/markusbug/Orchestrator/daemon/internal/core"
+	"github.com/markusbug/Orchestrator/daemon/internal/relay/vconn"
 	"github.com/markusbug/Orchestrator/daemon/web"
 )
+
+// viaRelayKey marks request contexts of connections that arrived through a
+// relay (see internal/relay). Those are never loopback, whatever address the
+// relay reports, so debug auto-auth cannot apply to them.
+type viaRelayKey struct{}
+
+func connContext(ctx context.Context, c net.Conn) context.Context {
+	if tc, ok := c.(*tls.Conn); ok {
+		c = tc.NetConn()
+	}
+	if _, ok := c.(*vconn.Conn); ok {
+		return context.WithValue(ctx, viaRelayKey{}, true)
+	}
+	return ctx
+}
 
 // Server is the TLS + WebSocket front end.
 type Server struct {
@@ -56,10 +72,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ws.SetReadLimit(1 << 20)
+	viaRelay := r.Context().Value(viaRelayKey{}) != nil
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	ip := net.ParseIP(host)
-	loopback := ip != nil && ip.IsLoopback()
-	c := newConn(s, ws, host, loopback)
+	loopback := !viaRelay && ip != nil && ip.IsLoopback()
+	key := host
+	if viaRelay {
+		// The relay reports the phone's IP; keep its lockouts separate from
+		// direct connections so a relay cannot unlock or lock a LAN address.
+		key = "relay:" + host
+	}
+	c := newConn(s, ws, key, loopback)
 	c.run(r.Context())
 }
 
@@ -72,34 +95,44 @@ func (s *Server) TLSConfig() *tls.Config {
 	}
 }
 
-// ListenAndServe serves until ctx is cancelled.
-func (s *Server) ListenAndServe(ctx context.Context) error {
+// ListenAndServe listens on the configured TCP address and serves it plus
+// any extra listeners (such as a relay's virtual listener) until ctx is
+// cancelled.
+func (s *Server) ListenAndServe(ctx context.Context, extra ...net.Listener) error {
 	addr := net.JoinHostPort(s.Core.Cfg.Bind, fmt.Sprint(s.Core.Cfg.Port))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
-	return s.Serve(ctx, ln)
+	return s.Serve(ctx, append([]net.Listener{ln}, extra...)...)
 }
 
-// Serve serves TLS on ln until ctx is cancelled.
-func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
+// Serve serves TLS on every listener with one HTTP server until ctx is
+// cancelled or a listener fails.
+func (s *Server) Serve(ctx context.Context, lns ...net.Listener) error {
 	s.http = &http.Server{
 		Handler:           s.Handler(),
 		TLSConfig:         s.TLSConfig(),
 		ReadHeaderTimeout: 10 * time.Second,
 		TLSNextProto:      map[string]func(*http.Server, *tls.Conn, http.Handler){}, // no h2
+		ConnContext:       connContext,
 	}
-	errc := make(chan error, 1)
-	go func() { errc <- s.http.ServeTLS(ln, "", "") }()
-	select {
-	case <-ctx.Done():
+	errc := make(chan error, len(lns))
+	for _, ln := range lns {
+		go func(ln net.Listener) { errc <- s.http.ServeTLS(ln, "", "") }(ln)
+	}
+	shutdown := func() {
 		sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = s.http.Shutdown(sctx)
+	}
+	select {
+	case <-ctx.Done():
+		shutdown()
 		return nil
 	case err := <-errc:
-		if errors.Is(err, http.ErrServerClosed) {
+		shutdown()
+		if errors.Is(err, http.ErrServerClosed) || errors.Is(err, net.ErrClosed) {
 			return nil
 		}
 		return err

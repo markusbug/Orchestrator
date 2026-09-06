@@ -28,6 +28,9 @@ class FakeDaemon {
   int _seq = 0;
   int connectionsAccepted = 0;
 
+  /// When set, `host.info` also advertises this relay-kind address.
+  Map<String, dynamic>? relayAddr;
+
   int get port => _server.port;
 
   static Future<FakeDaemon> start() async {
@@ -239,6 +242,7 @@ class FakeConn {
           'port': d.port,
           'addrs': [
             {'ip': '127.0.0.1', 'kind': 'lan'},
+            if (d.relayAddr != null) d.relayAddr,
           ],
           'roots': ['/home/u'],
           'default_cmd': 'claude',

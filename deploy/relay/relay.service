@@ -1,0 +1,59 @@
+[Unit]
+Description=Orchestrator relay (SNI router: TLS-terminated API on the apex, TLS passthrough to hosts)
+Documentation=https://github.com/markusbug/Orchestrator/blob/main/deploy/relay/README.md
+After=network-online.target
+Wants=network-online.target
+# Restart=always must never give up; the default 5 starts per 10 s would trip
+# with RestartSec=2 during a bad deploy.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+EnvironmentFile=/etc/relay/relay.env
+# ${STATE_DIRECTORY} expands in ExecStart on systemd 255 (Environment= lines do
+# not expand it). $RELAY_FLAGS is unbraced on purpose so it splits on spaces.
+ExecStart=/usr/local/bin/relay --cache-dir=${STATE_DIRECTORY} $RELAY_FLAGS
+DynamicUser=yes
+StateDirectory=relay
+StateDirectoryMode=0700
+UMask=0077
+SyslogIdentifier=relay
+
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+# The relay drains data streams for up to 30 s after SIGTERM.
+TimeoutStopSec=35
+LimitNOFILE=1048576
+
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+# Do not add ~@resources: the Go runtime raises RLIMIT_NOFILE with prlimit64
+# at startup and a filtered syscall kills the process with SIGSYS.
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+# No PrivateUsers=yes: CAP_NET_BIND_SERVICE inside a user namespace cannot
+# bind :443 in the host network namespace.
+
+[Install]
+WantedBy=multi-user.target

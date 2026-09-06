@@ -3,12 +3,16 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -21,8 +25,13 @@ import (
 
 	"github.com/markusbug/Orchestrator/daemon/internal/admin"
 	"github.com/markusbug/Orchestrator/daemon/internal/api"
+	"github.com/markusbug/Orchestrator/daemon/internal/auth"
 	"github.com/markusbug/Orchestrator/daemon/internal/config"
 	"github.com/markusbug/Orchestrator/daemon/internal/core"
+	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
+	"github.com/markusbug/Orchestrator/daemon/internal/relay/client"
+	"github.com/markusbug/Orchestrator/daemon/internal/relay/vconn"
+	"github.com/markusbug/Orchestrator/daemon/internal/relay/wire"
 	"github.com/markusbug/Orchestrator/daemon/internal/service"
 )
 
@@ -38,6 +47,7 @@ Commands:
   pair        print a QR code to pair a phone (valid 5 minutes)
   devices     list paired devices        (devices revoke <id>)
   sessions    list sessions              (sessions kill <id> | sessions remove <id>)
+  relay       show the relay connection  (relay set <url> | relay off)
   logs        follow the service log
   version     print version
 
@@ -46,6 +56,10 @@ Flags for serve:
   --port N       listen port (default 7391 or config)
   --bind ADDR    bind address (default all interfaces)
   --dir PATH     config directory (default ~/.config/orchestrator)
+
+The relay lets phones reach this machine from anywhere without any port or
+firewall setup: the daemon connects out, so nothing needs to listen. It is
+end-to-end encrypted with this machine's own certificate (see docs/RELAY.md).
 `
 
 func main() {
@@ -73,6 +87,8 @@ func main() {
 		err = runDevices(args)
 	case "sessions":
 		err = runSessions(args)
+	case "relay":
+		err = runRelay(args)
 	case "logs":
 		err = runLogs()
 	case "version", "--version", "-v":
@@ -110,7 +126,7 @@ func parseArgs(fs *flag.FlagSet, args []string) []string {
 	return positional
 }
 
-func client(dir string) (*admin.Client, error) {
+func adminClient(dir string) (*admin.Client, error) {
 	p, err := paths(dir)
 	if err != nil {
 		return nil, err
@@ -171,12 +187,54 @@ func runServe(args []string) error {
 	if dbg {
 		log.Warn("debug mode: loopback connections are auto-authenticated", "url", fmt.Sprintf("https://localhost:%d/_debug/", cfg.Port))
 	}
+	var extra []net.Listener
+	if cfg.Relay.Active() {
+		if err := cfg.Relay.Validate(dbg); err != nil {
+			return err
+		}
+		rc, ln, err := startRelay(ctx, c, dbg, log)
+		if err != nil {
+			return err
+		}
+		c.Relay = rc
+		extra = append(extra, ln)
+		log.Info("relay", "url", cfg.Relay.URL, "addr", rc.Addr(), "port", rc.Port())
+	} else {
+		log.Info("relay off; phones can only reach this machine directly", "host_id", c.HostID)
+	}
 	srv := &api.Server{Core: c, Log: log}
-	if err := srv.ListenAndServe(ctx); err != nil {
+	if err := srv.ListenAndServe(ctx, extra...); err != nil {
 		return err
 	}
 	log.Info("shutting down")
 	return nil
+}
+
+// startRelay connects to the configured relay and returns the listener that
+// receives phone connections through it.
+func startRelay(ctx context.Context, c *core.Core, insecure bool, log *slog.Logger) (*client.Client, *vconn.Listener, error) {
+	var tlsCfg *tls.Config
+	if ca := c.Cfg.Relay.CAFile; ca != "" {
+		pem, err := os.ReadFile(ca)
+		if err != nil {
+			return nil, nil, fmt.Errorf("relay ca_file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, nil, fmt.Errorf("relay ca_file: no certificates in %s", ca)
+		}
+		tlsCfg = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	}
+	ln := vconn.NewListener("relay")
+	rc, err := client.New(client.Options{
+		URL: c.Cfg.Relay.URL, HostKey: c.HostKey, Version: core.Version, Listener: ln,
+		TLS: tlsCfg, Insecure: insecure, Log: log,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	go rc.Run(ctx)
+	return rc, ln, nil
 }
 
 func runInstall(args []string) error {
@@ -200,7 +258,7 @@ func runStatus(args []string) error {
 	dir := fs.String("dir", "", "config directory")
 	asJSON := fs.Bool("json", false, "print JSON")
 	parseArgs(fs, args)
-	cl, err := client(*dir)
+	cl, err := adminClient(*dir)
 	if err != nil {
 		return err
 	}
@@ -221,6 +279,7 @@ func runStatus(args []string) error {
 	}
 	fmt.Printf("sessions:    %d\n", st.Sessions)
 	fmt.Printf("devices:     %d\n", st.Devices)
+	printRelay(st.Relay)
 	if st.Debug {
 		fmt.Println("debug:       on (loopback auto-auth, /_debug enabled)")
 	}
@@ -231,7 +290,7 @@ func runPair(args []string) error {
 	fs := flag.NewFlagSet("pair", flag.ExitOnError)
 	dir := fs.String("dir", "", "config directory")
 	parseArgs(fs, args)
-	cl, err := client(*dir)
+	cl, err := adminClient(*dir)
 	if err != nil {
 		return err
 	}
@@ -255,7 +314,111 @@ func runPair(args []string) error {
 		fmt.Printf("  address:     %s (%s)\n", a.IP, a.Kind)
 	}
 	fmt.Println()
-	fmt.Println("The phone must be on the same network as this machine.")
+	if hasRelay(p.Addrs) {
+		fmt.Println("The phone can be anywhere: it reaches this machine through the relay, or directly on the same network.")
+	} else {
+		fmt.Println("The phone must be on the same network as this machine (or on the same Tailscale network).")
+	}
+	return nil
+}
+
+func hasRelay(addrs []protocol.HostAddr) bool {
+	for _, a := range addrs {
+		if a.Kind == protocol.AddrRelay {
+			return true
+		}
+	}
+	return false
+}
+
+func printRelay(rs *client.Status) {
+	if rs == nil {
+		fmt.Println("relay:       off")
+		return
+	}
+	state := "connecting"
+	if rs.Connected {
+		state = "connected since " + rs.Since.Format(time.Kitchen)
+	} else if rs.LastError != "" {
+		state = "disconnected (" + rs.LastError + ")"
+	}
+	fmt.Printf("relay:       %s (%s)\n", rs.URL, state)
+	fmt.Printf("relay addr:  %s:%d\n", rs.Addr, rs.Port)
+	if rs.Streams > 0 {
+		fmt.Printf("relay use:   %d phone connection(s)\n", rs.Streams)
+	}
+}
+
+// runRelay shows or changes the relay configuration.
+func runRelay(args []string) error {
+	fs := flag.NewFlagSet("relay", flag.ExitOnError)
+	dir := fs.String("dir", "", "config directory")
+	rest := parseArgs(fs, args)
+	p, err := paths(*dir)
+	if err != nil {
+		return err
+	}
+	if len(rest) > 0 {
+		switch rest[0] {
+		case "set":
+			if len(rest) < 2 {
+				return fmt.Errorf("usage: orchestrator relay set <https://relay.example>")
+			}
+			rc := config.RelayConfig{URL: rest[1]}
+			if err := rc.Validate(false); err != nil {
+				return err
+			}
+			if err := config.SetRelay(p, true, rest[1]); err != nil {
+				return err
+			}
+			fmt.Println("relay set to", rest[1])
+			fmt.Println("restart the daemon to apply (systemctl --user restart orchestrator, or restart `orchestrator serve`)")
+			return nil
+		case "off":
+			if err := config.SetRelay(p, false, ""); err != nil {
+				return err
+			}
+			fmt.Println("relay disabled; restart the daemon to apply")
+			return nil
+		case "on":
+			if err := config.SetRelay(p, true, ""); err != nil {
+				return err
+			}
+			fmt.Println("relay enabled; restart the daemon to apply")
+			return nil
+		case "status":
+		default:
+			return fmt.Errorf("usage: orchestrator relay [status | set <url> | on | off]")
+		}
+	}
+	cfg, err := config.Load(p)
+	if err != nil {
+		return err
+	}
+	cl := admin.NewClient(p.AdminSocket)
+	if st, err := cl.Status(); err == nil {
+		fmt.Printf("daemon:      running (pid %d)\n", st.PID)
+		fmt.Printf("host id:     %s\n", st.HostID)
+		printRelay(st.Relay)
+		return nil
+	}
+	// Daemon not running: report from the config and key file.
+	fmt.Println("daemon:      not running")
+	key, err := auth.EnsureHostKey(p.HostKeyFile)
+	if err != nil {
+		return err
+	}
+	id := wire.HostID(key.Public().(ed25519.PublicKey))
+	fmt.Printf("host id:     %s\n", id)
+	switch {
+	case !cfg.Relay.Enabled:
+		fmt.Println("relay:       off (enable with `orchestrator relay on`)")
+	case cfg.Relay.URL == "":
+		fmt.Println("relay:       no relay configured (set one with `orchestrator relay set <url>`)")
+	default:
+		fmt.Printf("relay:       %s (configured)\n", cfg.Relay.URL)
+		fmt.Printf("relay addr:  %s:%d\n", wire.Addr(id, cfg.Relay.Domain()), cfg.Relay.Port())
+	}
 	return nil
 }
 
@@ -263,7 +426,7 @@ func runDevices(args []string) error {
 	fs := flag.NewFlagSet("devices", flag.ExitOnError)
 	dir := fs.String("dir", "", "config directory")
 	rest := parseArgs(fs, args)
-	cl, err := client(*dir)
+	cl, err := adminClient(*dir)
 	if err != nil {
 		return err
 	}
@@ -298,7 +461,7 @@ func runSessions(args []string) error {
 	fs := flag.NewFlagSet("sessions", flag.ExitOnError)
 	dir := fs.String("dir", "", "config directory")
 	rest := parseArgs(fs, args)
-	cl, err := client(*dir)
+	cl, err := adminClient(*dir)
 	if err != nil {
 		return err
 	}
@@ -367,7 +530,7 @@ func runHook(args []string) error {
 	var cl *admin.Client
 	if sock := os.Getenv("ORCHESTRATOR_SOCKET"); sock != "" {
 		cl = admin.NewClient(sock)
-	} else if c, err := client(""); err == nil {
+	} else if c, err := adminClient(""); err == nil {
 		cl = c
 	} else {
 		return nil

@@ -81,7 +81,7 @@ class _Empty extends StatelessWidget {
             Text('No hosts yet', style: t.titleLarge),
             const SizedBox(height: 8),
             Text(
-              'On your computer run `orchestrator pair`, then scan the QR code it prints. The phone must be on the same network.',
+              'On your computer run `orchestrator pair`, then scan the QR code it prints.',
               textAlign: TextAlign.center,
               style: t.bodyMedium,
             ),

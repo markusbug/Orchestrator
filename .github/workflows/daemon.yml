@@ -30,8 +30,14 @@ jobs:
       - name: cross-compile linux/arm64
         run: GOOS=linux GOARCH=arm64 go build -o /dev/null ./...
       - name: build
-        run: go build -ldflags "-s -w -X github.com/markusbug/Orchestrator/daemon/internal/core.Version=${GITHUB_SHA::8}" -o ../bin/orchestrator ./cmd/orchestrator
+        run: go build -ldflags "-s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=${GITHUB_SHA::8}" -o ../bin/orchestrator ./cmd/orchestrator
       - uses: actions/upload-artifact@v4
         with:
           name: orchestrator-linux-amd64
           path: bin/orchestrator
+      - name: build relay
+        run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=${GITHUB_SHA::8}" -o ../bin/relay ./cmd/relay
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relay-linux-amd64
+          path: bin/relay

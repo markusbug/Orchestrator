@@ -24,6 +24,10 @@ make build
 
 Developer note: if a firewall is active on the host (`ufw status`), allow the port with `sudo ufw allow 7391/tcp`, otherwise the phone's connection is silently dropped. Users of the finished product will never do this; the daemon will connect outbound through a relay with a public API so everything works out of the box (see PLAN.md, Connectivity). The TLS certificate is self-signed; the phone pins its fingerprint at pairing time, and the browser will ask you to accept it once. `--debug` skips authentication for connections from the same machine, so only use it on a machine you trust.
 
+## Run a relay
+
+The relay removes every port and firewall step for end users: the daemon connects out, phones connect to `<hostid>.<relay-domain>:443`, and the relay pipes the daemon's own TLS through without seeing plaintext. `make build-relay` builds it; `make run-relay-dev` runs a self-signed one locally. Design in [docs/RELAY.md](docs/RELAY.md), deployment and operations in [deploy/relay/README.md](deploy/relay/README.md). Point a daemon at a relay with `orchestrator relay set https://relay.example`, or turn it off with `orchestrator relay off`.
+
 ## Try the app
 
 ```

@@ -87,7 +87,7 @@ class SettingsScreen extends StatelessWidget {
               ListTile(
                 title: Text(h.name),
                 subtitle: Text(
-                  '${h.hostname} · ${h.addrs.map((a) => a.ip).join(', ')}:${h.port}\n${h.fingerprint}',
+                  '${h.hostname} · ${h.addrs.map((a) => a.isRelay ? 'relay' : '${a.ip}:${a.portOr(h.port)}').join(', ')}\n${h.fingerprint}',
                   style: const TextStyle(fontSize: 11),
                 ),
                 isThreeLine: true,

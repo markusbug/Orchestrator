@@ -326,9 +326,27 @@ type ClaudeConversationsReply struct {
 
 // --- Host ---
 
+// HostAddr is one way to reach the host. Kind "relay" addresses are DNS
+// names on a relay (<hostid>.<relay-domain>) and carry their own port.
 type HostAddr struct {
 	IP   string `json:"ip"`
-	Kind string `json:"kind"` // lan | tailscale
+	Kind string `json:"kind"`           // lan | tailscale | relay
+	Port int    `json:"port,omitempty"` // 0 means the host's default port
+}
+
+// HostAddr kinds.
+const (
+	AddrLAN       = "lan"
+	AddrTailscale = "tailscale"
+	AddrRelay     = "relay"
+)
+
+// RelayInfo describes how the host is reachable through a relay.
+type RelayInfo struct {
+	URL    string `json:"url"`     // relay apex, e.g. https://relay.example
+	HostID string `json:"host_id"` // this host's id on the relay
+	Addr   string `json:"addr"`    // <host_id>.<relay-domain>
+	Port   int    `json:"port"`
 }
 
 type HostInfo struct {
@@ -340,6 +358,7 @@ type HostInfo struct {
 	Roots       []string   `json:"roots"`
 	DefaultCmd  string     `json:"default_cmd"`
 	Home        string     `json:"home"`
+	Relay       *RelayInfo `json:"relay,omitempty"`
 }
 
 // PairPayload is what the QR code encodes.

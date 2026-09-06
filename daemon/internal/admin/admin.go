@@ -17,6 +17,7 @@ import (
 
 	"github.com/markusbug/Orchestrator/daemon/internal/core"
 	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
+	"github.com/markusbug/Orchestrator/daemon/internal/relay/client"
 )
 
 // Status is the reply of GET /status.
@@ -33,6 +34,8 @@ type Status struct {
 	Debug       bool                `json:"debug"`
 	PID         int                 `json:"pid"`
 	ConfigDir   string              `json:"config_dir"`
+	HostID      string              `json:"host_id"`
+	Relay       *client.Status      `json:"relay,omitempty"`
 }
 
 // DeviceInfo is a device row for the CLI.
@@ -68,13 +71,18 @@ func (s *Server) Handler() http.Handler {
 				active++
 			}
 		}
-		writeJSON(w, Status{
+		st := Status{
 			Version: core.Version, Host: s.Core.Hostname, Port: s.Core.Cfg.Port, Bind: s.Core.Cfg.Bind,
 			Fingerprint: s.Core.Identity.Fingerprint, Addrs: s.Core.Addrs(),
 			Sessions: len(s.Core.Mgr.List()), Devices: active,
 			UptimeSec: int64(time.Since(s.Core.StartedAt).Seconds()), Debug: s.Core.Debug,
-			PID: os.Getpid(), ConfigDir: s.Core.Paths.Dir,
-		})
+			PID: os.Getpid(), ConfigDir: s.Core.Paths.Dir, HostID: s.Core.HostID,
+		}
+		if s.Core.Relay != nil {
+			rs := s.Core.Relay.Status()
+			st.Relay = &rs
+		}
+		writeJSON(w, st)
 	})
 	mux.HandleFunc("GET /sessions", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, protocol.SessionListReply{Sessions: s.Core.Mgr.List()})

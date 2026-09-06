@@ -274,6 +274,37 @@ void main() {
       conn.dispose();
     });
 
+    test('connects through a relay address with its own port', () async {
+      // The host's own port is dead; the relay-kind address names the port
+      // that works (in production it is 443 on the relay).
+      daemon.relayAddr = {
+        'ip': 'localhost',
+        'kind': 'relay',
+        'port': daemon.port,
+      };
+      final rec = HostRecord(
+        id: 'h1',
+        name: 'fake',
+        hostname: 'fake',
+        addrs: [
+          const HostAddr('127.0.0.1', 'lan'),
+          HostAddr('localhost', 'relay', port: daemon.port),
+        ],
+        port: 1,
+        fingerprint: daemon.fingerprint,
+        deviceId: 'dev-1',
+        createdAt: DateTime.now(),
+      );
+      final conn = HostConnection(rec, keys: keys, deviceName: () => 'phone');
+      conn.start();
+      await waitFor(() => conn.state == ConnState.connected);
+      expect(conn.connectedVia, 'relay');
+      expect(conn.host.lastGoodAddr, 'localhost');
+      // host.info re-advertises the relay address, so it survives the merge.
+      expect(conn.host.relayAddr?.port, daemon.port);
+      conn.dispose();
+    });
+
     test('an unreachable host keeps retrying with backoff', () async {
       final dead = HostRecord(
         id: 'h1',

@@ -1,0 +1,74 @@
+name: relay
+
+on:
+  push:
+    tags: ["relay-v*"]
+  pull_request:
+    paths: ["deploy/relay/**", ".github/workflows/relay.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lint-deploy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shell syntax
+        run: bash -n deploy/relay/install.sh
+      - name: shellcheck
+        run: shellcheck -S warning deploy/relay/install.sh
+
+  build:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: daemon
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe needs tags
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - id: ver
+        name: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            v="${GITHUB_REF_NAME#relay-}"
+          else
+            v="$(git describe --tags --match 'relay-v*' --always --dirty | sed 's/^relay-//')"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      # Tag pushes do not trigger daemon.yml (it filters on branches), so the
+      # relay's tests run here too.
+      - name: test
+        run: go vet ./... && go test -race -timeout 300s ./internal/relay/... ./internal/api/... ./cmd/relay/...
+      - name: build linux/amd64 and linux/arm64
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOFLAGS: -trimpath
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            GOARCH=$arch go build -ldflags "-s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=${{ steps.ver.outputs.version }}" \
+              -o ../dist/relay_linux_$arch ./cmd/relay
+          done
+          tar -czf ../dist/relay-deploy.tar.gz -C ../deploy relay
+          (cd ../dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relay-dist
+          path: dist/
+          retention-days: 14
+      - if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

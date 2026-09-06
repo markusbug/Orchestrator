@@ -128,6 +128,51 @@ void main() {
         jsonDecode(jsonEncode(h.toJson())) as Map<String, dynamic>,
       );
       expect(back.lastGoodAddr, '100.64.0.1');
+    });
+
+    test('relay address sorts last and keeps its own port', () {
+      final h = HostRecord(
+        id: 'x',
+        name: 'x',
+        hostname: 'x',
+        addrs: const [
+          HostAddr('abcd.relay.example', 'relay', port: 443),
+          HostAddr('100.64.0.1', 'tailscale'),
+          HostAddr('10.0.0.2', 'lan'),
+        ],
+        port: 7391,
+        fingerprint: 'f',
+        deviceId: 'd',
+        createdAt: DateTime(2026),
+      );
+      expect(h.orderedAddrs.map((a) => a.ip), [
+        '10.0.0.2',
+        '100.64.0.1',
+        'abcd.relay.example',
+      ]);
+      expect(h.relayAddr?.isRelay, isTrue);
+      expect(h.relayAddr!.portOr(h.port), 443);
+      expect(h.addrs[2].portOr(h.port), 7391);
+      // A relay that worked last time is still tried first.
+      h.lastGoodAddr = 'abcd.relay.example';
+      expect(h.orderedAddrs.first.isRelay, isTrue);
+      final back = HostRecord.fromJson(
+        jsonDecode(jsonEncode(h.toJson())) as Map<String, dynamic>,
+      );
+      expect(
+        back.relayAddr,
+        const HostAddr('abcd.relay.example', 'relay', port: 443),
+      );
+      expect(back.addrs[2].port, isNull);
+      // Older payloads without a port still parse.
+      expect(HostAddr.fromJson({'ip': '1.2.3.4', 'kind': 'lan'}).port, isNull);
+      final info = HostInfo.fromJson({
+        'host': 'h',
+        'addrs': [
+          {'ip': 'abcd.relay.example', 'kind': 'relay', 'port': 443},
+        ],
+      });
+      expect(info.addrs.single.port, 443);
       expect(back.addrs, h.addrs);
     });
   });

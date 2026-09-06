@@ -35,6 +35,7 @@ void main() {
   final code = env['ORCH_LIVE_CODE'];
   final fp = env['ORCH_LIVE_FP'];
   final ip = env['ORCH_LIVE_IP'] ?? '127.0.0.1';
+  final relayAddr = env['ORCH_LIVE_RELAY_ADDR'];
   final enabled = port != null && code != null && fp != null;
 
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -55,7 +56,11 @@ void main() {
       final rec = await model.pair(
         PairPayload(
           host: 'live',
-          addrs: [HostAddr(ip, 'lan')],
+          addrs: [
+            HostAddr(ip, 'lan'),
+            // Optional: <hostid>.<relay-domain> to exercise the relay path.
+            if (relayAddr != null) HostAddr(relayAddr, 'relay', port: 443),
+          ],
           port: port!,
           fingerprint: fp!,
           code: code!,

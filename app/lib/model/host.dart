@@ -1,27 +1,44 @@
-/// One address a host can be reached at. `kind` is `lan` or `tailscale`.
+/// One address a host can be reached at. `kind` is `lan`, `tailscale`, or
+/// `relay`. A relay address is a DNS name (`<hostid>.<relay-domain>`) that
+/// carries its own [port]; the others use the host's port.
 class HostAddr {
-  const HostAddr(this.ip, this.kind);
+  const HostAddr(this.ip, this.kind, {this.port});
 
   final String ip;
   final String kind;
+  final int? port;
 
   bool get isLan => kind == 'lan';
   bool get isTailscale => kind == 'tailscale';
+  bool get isRelay => kind == 'relay';
 
-  factory HostAddr.fromJson(Map<String, dynamic> j) =>
-      HostAddr(j['ip'] as String, (j['kind'] as String?) ?? 'lan');
+  /// Port to dial, falling back to the host's default.
+  int portOr(int hostPort) => port ?? hostPort;
 
-  Map<String, dynamic> toJson() => {'ip': ip, 'kind': kind};
+  factory HostAddr.fromJson(Map<String, dynamic> j) => HostAddr(
+    j['ip'] as String,
+    (j['kind'] as String?) ?? 'lan',
+    port: (j['port'] as num?)?.toInt(),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'ip': ip,
+    'kind': kind,
+    if (port != null) 'port': port,
+  };
 
   @override
   bool operator ==(Object other) =>
-      other is HostAddr && other.ip == ip && other.kind == kind;
+      other is HostAddr &&
+      other.ip == ip &&
+      other.kind == kind &&
+      other.port == port;
 
   @override
-  int get hashCode => Object.hash(ip, kind);
+  int get hashCode => Object.hash(ip, kind, port);
 
   @override
-  String toString() => '$ip ($kind)';
+  String toString() => port == null ? '$ip ($kind)' : '$ip:$port ($kind)';
 }
 
 /// Merges address lists, keeping order and dropping duplicates. Used to
@@ -126,7 +143,9 @@ class HostRecord {
     if (lastGoodAddr != null) 'last_good_addr': lastGoodAddr,
   };
 
-  /// Addresses in the order to try: last known good, LAN, Tailscale, rest.
+  /// Addresses in the order to try: last known good, LAN, Tailscale, then
+  /// anything else, with the relay last. The relay always works but is the
+  /// slowest path, so direct addresses get their chance first.
   List<HostAddr> get orderedAddrs {
     final out = <HostAddr>[];
     final good = lastGoodAddr;
@@ -142,9 +161,20 @@ class HostRecord {
       if (a.isTailscale && !out.contains(a)) out.add(a);
     }
     for (final a in addrs) {
+      if (!a.isRelay && !out.contains(a)) out.add(a);
+    }
+    for (final a in addrs) {
       if (!out.contains(a)) out.add(a);
     }
     return out;
+  }
+
+  /// The relay address, if the host advertises one.
+  HostAddr? get relayAddr {
+    for (final a in addrs) {
+      if (a.isRelay) return a;
+    }
+    return null;
   }
 }
 

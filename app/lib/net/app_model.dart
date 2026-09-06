@@ -23,9 +23,10 @@ class PairException implements Exception {
   @override
   String toString() {
     if (failures.isEmpty) return 'no address to connect to';
-    return 'Could not reach port $port on any address. '
-        'Check that the phone is on the same Wi-Fi and that the host '
-        'firewall allows the port (ufw: `sudo ufw allow $port/tcp`).\n'
+    return 'Could not reach the host on any address. '
+        'If the host has no relay configured, the phone must be on the same '
+        'Wi-Fi and the host firewall must allow port $port '
+        '(ufw: `sudo ufw allow $port/tcp`).\n'
         '${failures.map((f) => '• $f').join('\n')}';
   }
 }
@@ -136,8 +137,11 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
       try {
         c = await HostClient.connect(
           ip: addr.ip,
-          port: p.port,
+          port: addr.portOr(p.port),
           fingerprint: p.fingerprint,
+          timeout: addr.isRelay
+              ? const Duration(seconds: 12)
+              : const Duration(seconds: 6),
         );
       } catch (e) {
         failures.add('${addr.ip}: ${describeError(e)}');

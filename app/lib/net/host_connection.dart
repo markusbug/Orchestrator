@@ -211,8 +211,12 @@ class HostConnection extends ChangeNotifier {
       try {
         c = await HostClient.connect(
           ip: addr.ip,
-          port: host.port,
+          port: addr.portOr(host.port),
           fingerprint: host.fingerprint,
+          // The relay adds a round trip to the daemon before TLS starts.
+          timeout: addr.isRelay
+              ? const Duration(seconds: 12)
+              : const Duration(seconds: 6),
         );
       } on FingerprintMismatch {
         rethrow;
@@ -226,7 +230,7 @@ class HostConnection extends ChangeNotifier {
           await c.auth(hello: h, deviceId: host.deviceId, key: key);
         }
         _client = c;
-        connectedVia = addr.ip;
+        connectedVia = addr.isRelay ? 'relay' : addr.ip;
         lastConnectedAt = DateTime.now();
         if (host.lastGoodAddr != addr.ip) {
           host.lastGoodAddr = addr.ip;
