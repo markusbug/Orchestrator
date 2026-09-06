@@ -39,21 +39,27 @@ func launchApp() error {
 	return fmt.Errorf("no desktop app on %s yet", runtime.GOOS)
 }
 
-// findLinuxApp looks where the packages put the desktop binary: next to this
-// executable (.deb, AppImage), then anywhere on PATH.
+// findLinuxApp looks where the packages put the desktop app: next to this
+// executable (that is the .deb and the AppImage's own layout), then on PATH,
+// then the AppImage that scripts/install.sh drops in ~/.local/bin.
 func findLinuxApp() (string, error) {
 	const name = "orchestrator-desktop"
+	var candidates []string
 	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), name)
-		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
-			return cand, nil
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), name))
+	}
+	if p, err := exec.LookPath(name); err == nil {
+		candidates = append(candidates, p)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, filepath.Join(home, ".local", "bin", "Orchestrator.AppImage"))
+	}
+	for _, c := range candidates {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c, nil
 		}
 	}
-	p, err := exec.LookPath(name)
-	if err != nil {
-		return "", fmt.Errorf("%s is not installed", name)
-	}
-	return p, nil
+	return "", fmt.Errorf("the Orchestrator app is not installed on this machine")
 }
 
 // startDetached runs a command without waiting for it. The child is
