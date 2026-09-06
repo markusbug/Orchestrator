@@ -7,7 +7,9 @@ RELAY_VERSION ?= $(shell (git describe --tags --match 'relay-v*' --always --dirt
 RELAY_LDFLAGS := -s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=$(RELAY_VERSION)
 LOAD_HOSTS ?= 1000
 
-.PHONY: build test race vet xcompile run-debug clean app-check app-live build-relay build-relay-linux run-relay-dev relay-load
+FLUTTER ?= flutter
+
+.PHONY: build test race vet xcompile run-debug clean app-check app-live build-relay build-relay-linux run-relay-dev relay-load desktop-run desktop-build desktop-package
 
 build: ## build daemon binary into bin/
 	cd daemon && go build -ldflags '$(LDFLAGS)' -o ../bin/orchestrator ./cmd/orchestrator
@@ -29,6 +31,15 @@ app-check: ## format check, analyze, and test the Flutter app
 
 app-live: ## run the app's live test against a daemon (needs ORCH_LIVE_PORT, ORCH_LIVE_CODE, ORCH_LIVE_FP)
 	cd app && flutter test test/live_test.dart
+
+desktop-run: build ## run the desktop app against the daemon on this machine
+	cd app && $(FLUTTER) run -d linux -t lib/main_desktop.dart
+
+desktop-build: build ## release build of the desktop app (bundle in app/build/linux)
+	cd app && $(FLUTTER) build linux --release -t lib/main_desktop.dart
+
+desktop-package: build ## build the .deb and the AppImage into dist/ (needs nfpm, appimagetool)
+	FLUTTER=$(FLUTTER) ./packaging/build-linux.sh
 
 build-relay: ## build the relay binary into bin/
 	cd daemon && CGO_ENABLED=0 go build -trimpath -ldflags '$(RELAY_LDFLAGS)' -o ../bin/relay ./cmd/relay

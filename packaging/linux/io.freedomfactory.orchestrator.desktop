@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Orchestrator
+GenericName=Remote Claude Code sessions
+Comment=Run Claude Code sessions on this machine, drive them from your phone
+Exec=orchestrator-desktop
+Icon=orchestrator
+Terminal=false
+Categories=Development;Utility;
+Keywords=claude;terminal;ssh;remote;
+StartupWMClass=io.freedomfactory.orchestrator

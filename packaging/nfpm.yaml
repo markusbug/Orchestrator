@@ -1,0 +1,47 @@
+# Debian package for the Orchestrator desktop app.
+#
+# Built with nfpm (a single Go binary, declarative, no fakeroot), matching a
+# repo that already writes its install tooling by hand. Assembled by
+# packaging/build-linux.sh, which fills packaging/out/root first.
+#
+# There is deliberately no postinst. The daemon runs as a systemd *user*
+# service, which belongs to a user rather than to dpkg, so the app enables it
+# on first launch instead of the package doing it as root.
+name: orchestrator
+arch: ${PKG_ARCH}
+platform: linux
+version: ${PKG_VERSION}
+section: utils
+priority: optional
+maintainer: Markus Haas <markus@freedomfactory.io>
+description: |
+  Run Claude Code sessions on your own machine and drive them from your phone.
+  A small background service owns the terminal sessions so they keep running
+  when the phone is closed; the desktop app pairs a phone with a QR code and
+  shows what is connected.
+homepage: https://github.com/markusbug/Orchestrator
+license: MIT
+
+depends:
+  - libgtk-3-0
+  - libayatana-appindicator3-1
+  - libsecret-1-0
+recommends:
+  # Stock GNOME has no tray. Ubuntu ships and enables this already.
+  - gnome-shell-extension-appindicator
+
+contents:
+  - src: packaging/out/root/usr/lib/orchestrator
+    dst: /usr/lib/orchestrator
+  - src: /usr/lib/orchestrator/orchestrator
+    dst: /usr/bin/orchestrator
+    type: symlink
+  - src: /usr/lib/orchestrator/orchestrator-desktop
+    dst: /usr/bin/orchestrator-desktop
+    type: symlink
+  - src: packaging/linux/io.freedomfactory.orchestrator.desktop
+    dst: /usr/share/applications/io.freedomfactory.orchestrator.desktop
+  - src: packaging/linux/orchestrator-256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/orchestrator.png
+  - src: packaging/linux/orchestrator-512.png
+    dst: /usr/share/icons/hicolor/512x512/apps/orchestrator.png

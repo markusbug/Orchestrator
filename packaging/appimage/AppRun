@@ -1,0 +1,10 @@
+#!/bin/sh
+# AppImage entry point.
+#
+# The Flutter bundle looks for its data/ and lib/ next to the executable, and
+# the libraries we bundle for the tray are in the same lib/ directory, so both
+# are resolved relative to $APPDIR rather than to the host.
+set -eu
+HERE="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="${HERE}/usr/lib/orchestrator/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+exec "${HERE}/usr/lib/orchestrator/orchestrator-desktop" "$@"

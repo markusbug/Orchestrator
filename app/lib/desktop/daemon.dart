@@ -212,14 +212,22 @@ class DaemonController extends ChangeNotifier {
   Future<String?> _resolveExe() async {
     if (_exePath != null) return _exePath;
     final bundled = await _bundledExe();
+    if (bundled == null) return null;
+    if (_isStablePath(bundled)) return _exePath = bundled;
     final stable = _stableExePath();
-    if (bundled != null && stable != null) {
-      if (bundled == stable) return _exePath = stable;
-      await _syncStable(bundled, stable);
-      if (await File(stable).exists()) return _exePath = stable;
-    }
+    if (stable == null || bundled == stable) return _exePath = bundled;
+    await _syncStable(bundled, stable);
+    if (await File(stable).exists()) return _exePath = stable;
     return _exePath = bundled;
   }
+
+  /// Whether a path will still be there next boot. A .deb or a .app in
+  /// /Applications already is, and copying those would only leave a second
+  /// binary to drift out of date.
+  static bool _isStablePath(String path) =>
+      path.startsWith('/usr/') ||
+      path.startsWith('/opt/') ||
+      path.startsWith('/Applications/');
 
   /// The binary shipped inside this app, or the one from a dev checkout.
   Future<String?> _bundledExe() async {

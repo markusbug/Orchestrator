@@ -164,7 +164,7 @@ Orchestrator/
 
 **M3 — Mobile app MVP.** Pairing, hosts, session list, folder picker, terminal with key bar, new-session flow. LAN and Tailscale. TestFlight / internal Play track.
 
-**M4 — Desktop app + installers.** Setup wizard, tray, dashboard. `.deb`/`.rpm`/`.dmg`/Windows installer via CI. Signing and notarization. First public beta.
+**M4 — Desktop app + installers.** *Done for Linux and macOS.* Flutter desktop app with a status/pairing/devices window, a tray icon, close-to-tray and a start-at-login switch; `.deb`, AppImage and `.dmg` built on `desktop-v*` tags, plus a `curl | sh` installer. Deliberately trimmed from the spec below: no terminal view, no log viewer, no settings panel. Still open: signing and notarization (the `.dmg` is unsigned), Windows, and a Linux arm64 desktop build. See [docs/DESKTOP.md](docs/DESKTOP.md).
 
 **M5 — Robustness.** Claude Code hooks → attention flag; stale-session resume via `claude --continue`; conversation list from `~/.claude/projects`; per-session host processes so daemon upgrades don't kill sessions; webhook notifications; mDNS rediscovery.
 

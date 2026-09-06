@@ -1,0 +1,175 @@
+name: desktop
+
+# The desktop app has its own tag series because each release bundles two
+# binaries: the Flutter app and the Go daemon it ships with.
+on:
+  push:
+    tags: ["desktop-v*"]
+  pull_request:
+    paths:
+      - "app/**"
+      - "packaging/**"
+      - "scripts/install.sh"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lint-scripts:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shell syntax
+        run: |
+          sh -n scripts/install.sh
+          bash -n packaging/build-linux.sh
+      - name: shellcheck
+        run: |
+          shellcheck -s sh -S warning scripts/install.sh
+          shellcheck -S warning packaging/build-linux.sh packaging/appimage/AppRun
+
+  linux:
+    runs-on: ubuntu-22.04 # oldest glibc we support; newer distros still run it
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe needs tags
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+      - name: system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libayatana-appindicator3-dev \
+            libsecret-1-dev desktop-file-utils
+      - id: ver
+        name: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            v="${GITHUB_REF_NAME#desktop-v}"
+          else
+            v="0.0.0-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: build the daemon
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: -trimpath
+        run: |
+          set -euo pipefail
+          cd daemon
+          ld="-s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=${{ steps.ver.outputs.version }}"
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch go build -ldflags "$ld" -o "../dist/orchestrator_linux_$arch" ./cmd/orchestrator
+          done
+          # The packaging script picks the native one up from bin/.
+          install -Dm755 ../dist/orchestrator_linux_amd64 ../bin/orchestrator
+      - name: tools
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          curl -fsSL -o /usr/local/bin/appimagetool \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          sudo chmod +x /usr/local/bin/appimagetool
+      - name: build the .deb and the AppImage
+        run: |
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          packaging/build-linux.sh --version "${{ steps.ver.outputs.version }}"
+      - name: checksums
+        run: cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux
+          path: dist/
+          retention-days: 14
+      - if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+      - id: ver
+        name: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            v="${GITHUB_REF_NAME#desktop-v}"
+          else
+            v="0.0.0-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: build the daemon (universal)
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: -trimpath
+        run: |
+          set -euo pipefail
+          cd daemon
+          ld="-s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=${{ steps.ver.outputs.version }}"
+          for arch in arm64 amd64; do
+            GOOS=darwin GOARCH=$arch go build -ldflags "$ld" -o "../dist/orchestrator_darwin_$arch" ./cmd/orchestrator
+          done
+          # One CLI that runs on both architectures, whichever Mac opens it.
+          lipo -create -output ../dist/orchestrator \
+            ../dist/orchestrator_darwin_arm64 ../dist/orchestrator_darwin_amd64
+          ../dist/orchestrator version
+      - name: build the app
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build macos --release -t lib/main_desktop.dart
+      - name: bundle the daemon
+        run: |
+          set -euo pipefail
+          APP="app/build/macos/Build/Products/Release/Orchestrator.app"
+          install -m 0755 dist/orchestrator "$APP/Contents/Resources/orchestrator"
+          # Adding a file invalidates Flutter's ad-hoc signature, and on Apple
+          # silicon an app with a broken signature will not launch at all. This
+          # re-signs ad-hoc; it is not notarization, so Gatekeeper still warns.
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+      - name: create the dmg
+        run: |
+          set -euo pipefail
+          brew install create-dmg
+          create-dmg --volname Orchestrator --window-size 720 400 \
+            --icon "Orchestrator.app" 200 170 --app-drop-link 480 170 \
+            "dist/Orchestrator-${{ steps.ver.outputs.version }}-arm64.dmg" \
+            "app/build/macos/Build/Products/Release/Orchestrator.app"
+      - name: checksums
+        run: cd dist && rm -f orchestrator_darwin_* && shasum -a 256 -- * > SHA256SUMS.macos && cat SHA256SUMS.macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: dist/
+          retention-days: 14
+      - if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
