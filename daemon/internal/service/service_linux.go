@@ -102,10 +102,47 @@ func Status(name string) (string, error) {
 	return string(out), err
 }
 
+// Enabled reports whether the unit is installed and enabled at login.
+func Enabled(name string) (bool, error) {
+	if name == "" {
+		name = "orchestrator"
+	}
+	p, err := unitPath(name)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(p); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	// is-enabled exits non-zero for a disabled unit, so the state word is
+	// what to read, not the exit code.
+	out, _ := exec.Command("systemctl", "--user", "is-enabled", name+".service").Output()
+	return strings.TrimSpace(string(out)) == "enabled", nil
+}
+
 // LogsArgs returns the command to follow logs.
 func LogsArgs(name string) []string {
 	if name == "" {
 		name = "orchestrator"
 	}
 	return []string{"journalctl", "--user", "-u", name + ".service", "-f", "-n", "200"}
+}
+
+// Start starts the service without changing whether it runs at login.
+func Start(name string) error {
+	if name == "" {
+		name = "orchestrator"
+	}
+	return run("systemctl", "--user", "start", name+".service")
+}
+
+// Stop stops the service, leaving it enabled for the next login.
+func Stop(name string) error {
+	if name == "" {
+		name = "orchestrator"
+	}
+	return run("systemctl", "--user", "stop", name+".service")
 }

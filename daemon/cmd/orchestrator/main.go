@@ -38,18 +38,15 @@ import (
 
 const usage = `Orchestrator - run Claude Code sessions on this machine, drive them from your phone.
 
-Usage: orchestrator <command> [flags]
+Usage: orchestrator [command] [flags]
+
+Run with no arguments to open the Orchestrator app, which is how setup,
+pairing and device management are meant to be done.
 
 Commands:
   serve       run the daemon in the foreground
-  install     install and start the daemon as a user service (systemd)
+  install     install and start the daemon as a user service
   uninstall   stop and remove the user service
-  status      show daemon status, addresses, and fingerprint
-  pair        print a QR code to pair a phone (valid 5 minutes)
-  devices     list paired devices        (devices revoke <id>)
-  sessions    list sessions              (sessions kill <id> | sessions remove <id>)
-  relay       show the relay connection  (relay set <url> | relay off)
-  logs        follow the service log
   version     print version
 
 Flags for serve:
@@ -64,9 +61,16 @@ end-to-end encrypted with this machine's own certificate (see docs/RELAY.md).
 `
 
 func main() {
+	// The app is the supported way in, so bare `orchestrator` opens it. The
+	// commands below still work for headless machines and for support, they
+	// are just no longer the documented path.
 	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		if err := launchApp(); err != nil {
+			fmt.Fprintln(os.Stderr, "could not open the Orchestrator app:", err)
+			fmt.Fprint(os.Stderr, "\n", usage)
+			os.Exit(2)
+		}
+		return
 	}
 	cmd, args := os.Args[1], os.Args[2:]
 	var err error
@@ -96,6 +100,10 @@ func main() {
 		fmt.Println("orchestrator", core.Version)
 	case "_hook":
 		err = runHook(args)
+	case "_paths":
+		err = runPaths(args)
+	case "_service":
+		err = runService(args)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
@@ -244,17 +252,29 @@ func startRelay(ctx context.Context, c *core.Core, insecure bool, log *slog.Logg
 
 func runInstall(args []string) error {
 	fs := flag.NewFlagSet("install", flag.ExitOnError)
+	path := fs.String("path", "", "PATH to embed in the service (default: the login shell's)")
+	asJSON := fs.Bool("json", false, "print JSON")
 	parseArgs(fs, args)
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	unit, err := service.Install(service.Options{Exe: exe, Path: os.Getenv("PATH")})
+	// Not os.Getenv("PATH"): the desktop app installs the service too, and a
+	// GUI process inherits the desktop session's PATH, which may not have
+	// claude in it. See service.LoginPath.
+	p := *path
+	if p == "" {
+		p = service.LoginPath()
+	}
+	unit, err := service.Install(service.Options{Exe: exe, Path: p})
 	if err != nil {
 		return err
 	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"unit": unit, "path": p})
+	}
 	fmt.Println("installed", unit)
-	fmt.Println("service started; run `orchestrator status` then `orchestrator pair`")
+	fmt.Println("service started; open the Orchestrator app to pair a phone")
 	return nil
 }
 
@@ -294,6 +314,7 @@ func runStatus(args []string) error {
 func runPair(args []string) error {
 	fs := flag.NewFlagSet("pair", flag.ExitOnError)
 	dir := fs.String("dir", "", "config directory")
+	asJSON := fs.Bool("json", false, "print JSON")
 	parseArgs(fs, args)
 	cl, err := adminClient(*dir)
 	if err != nil {
@@ -305,6 +326,14 @@ func runPair(args []string) error {
 	}
 	raw, _ := json.Marshal(p)
 	uri := "orchestrator://pair?d=" + base64.RawURLEncoding.EncodeToString(raw)
+	if *asJSON {
+		// The app renders its own QR, so it needs the URI the QR encodes
+		// rather than the terminal drawing below.
+		return json.NewEncoder(os.Stdout).Encode(struct {
+			protocol.PairPayload
+			URI string `json:"uri"`
+		}{p, uri})
+	}
 	fmt.Println()
 	qrterminal.GenerateWithConfig(uri, qrterminal.Config{Level: qrterminal.L, Writer: os.Stdout, HalfBlocks: true, BlackChar: qrterminal.BLACK_BLACK, WhiteChar: qrterminal.WHITE_WHITE, BlackWhiteChar: qrterminal.BLACK_WHITE, WhiteBlackChar: qrterminal.WHITE_BLACK, QuietZone: 2})
 	fmt.Println()
@@ -383,6 +412,7 @@ func printRelay(rs *client.Status) {
 func runRelay(args []string) error {
 	fs := flag.NewFlagSet("relay", flag.ExitOnError)
 	dir := fs.String("dir", "", "config directory")
+	asJSON := fs.Bool("json", false, "print JSON")
 	rest := parseArgs(fs, args)
 	p, err := paths(*dir)
 	if err != nil {
@@ -426,6 +456,15 @@ func runRelay(args []string) error {
 		return err
 	}
 	cl := admin.NewClient(p.AdminSocket)
+	if *asJSON {
+		out := map[string]any{"enabled": cfg.Relay.Enabled, "url": cfg.Relay.URL, "daemon_running": false}
+		if st, err := cl.Status(); err == nil {
+			out["daemon_running"], out["host_id"], out["relay"] = true, st.HostID, st.Relay
+		} else if key, err := auth.LoadHostKey(p.HostKeyFile); err == nil {
+			out["host_id"] = wire.HostID(key.Public().(ed25519.PublicKey))
+		}
+		return json.NewEncoder(os.Stdout).Encode(out)
+	}
 	if st, err := cl.Status(); err == nil {
 		fmt.Printf("daemon:      running (pid %d)\n", st.PID)
 		fmt.Printf("host id:     %s\n", st.HostID)
@@ -462,6 +501,7 @@ func runRelay(args []string) error {
 func runDevices(args []string) error {
 	fs := flag.NewFlagSet("devices", flag.ExitOnError)
 	dir := fs.String("dir", "", "config directory")
+	asJSON := fs.Bool("json", false, "print JSON")
 	rest := parseArgs(fs, args)
 	cl, err := adminClient(*dir)
 	if err != nil {
@@ -471,12 +511,21 @@ func runDevices(args []string) error {
 		if err := cl.RevokeDevice(rest[1]); err != nil {
 			return err
 		}
+		if *asJSON {
+			return json.NewEncoder(os.Stdout).Encode(map[string]any{"revoked": rest[1]})
+		}
 		fmt.Println("revoked", rest[1])
 		return nil
 	}
 	devs, err := cl.Devices()
 	if err != nil {
 		return err
+	}
+	if *asJSON {
+		if devs == nil {
+			devs = []admin.DeviceInfo{}
+		}
+		return json.NewEncoder(os.Stdout).Encode(devs)
 	}
 	if len(devs) == 0 {
 		fmt.Println("no paired devices; run `orchestrator pair`")
@@ -497,6 +546,7 @@ func runDevices(args []string) error {
 func runSessions(args []string) error {
 	fs := flag.NewFlagSet("sessions", flag.ExitOnError)
 	dir := fs.String("dir", "", "config directory")
+	asJSON := fs.Bool("json", false, "print JSON")
 	rest := parseArgs(fs, args)
 	cl, err := adminClient(*dir)
 	if err != nil {
@@ -525,6 +575,12 @@ func runSessions(args []string) error {
 	list, err := cl.Sessions()
 	if err != nil {
 		return err
+	}
+	if *asJSON {
+		if list == nil {
+			list = []protocol.SessionInfo{}
+		}
+		return json.NewEncoder(os.Stdout).Encode(list)
 	}
 	if len(list) == 0 {
 		fmt.Println("no sessions")
