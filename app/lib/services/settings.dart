@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,6 +38,19 @@ enum KeyBarItem {
   ];
 }
 
+/// What the app calls itself to the daemon until the user renames it.
+///
+/// The daemon lists this next to the session, so it has to name the platform
+/// it is actually running on.
+String get defaultDeviceName {
+  if (Platform.isIOS) return 'iPhone';
+  if (Platform.isAndroid) return 'Android phone';
+  if (Platform.isMacOS) return 'Mac';
+  if (Platform.isWindows) return 'Windows PC';
+  if (Platform.isLinux) return 'Linux desktop';
+  return 'Phone';
+}
+
 /// User preferences. Persisted in shared preferences.
 class Settings extends ChangeNotifier {
   Settings({SharedPreferences? prefs})
@@ -56,7 +70,7 @@ class Settings extends ChangeNotifier {
   List<KeyBarItem> keyBar = List.of(KeyBarItem.defaultOrder);
   bool haptics = true;
   bool notifyWaiting = true;
-  String deviceName = 'iPhone';
+  String deviceName = defaultDeviceName;
 
   Future<void> load() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -115,7 +129,7 @@ class Settings extends ChangeNotifier {
   }
 
   Future<void> setDeviceName(String v) async {
-    deviceName = v.trim().isEmpty ? 'iPhone' : v.trim();
+    deviceName = v.trim().isEmpty ? defaultDeviceName : v.trim();
     notifyListeners();
     await _prefs?.setString(_kDeviceName, deviceName);
   }
