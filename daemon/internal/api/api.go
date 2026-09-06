@@ -86,11 +86,13 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	c.run(r.Context())
 }
 
-// TLSConfig returns the server TLS configuration.
+// TLSConfig returns the server TLS configuration. The floor is 1.3 because
+// both ends of this listener are ours: the app and the debug client already
+// negotiate it, so nothing needs the 1.2 fallback and its weaker suites.
 func (s *Server) TLSConfig() *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{s.Core.Identity.Cert},
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS13,
 		NextProtos:   []string{"http/1.1"},
 	}
 }
