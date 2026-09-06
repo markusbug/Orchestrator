@@ -65,9 +65,21 @@ esac
 
 if [ -z "$VERSION" ]; then
 	log "looking up the latest release"
-	VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" |
+	VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" 2>/dev/null |
 		sed -n 's/.*"tag_name": *"\(desktop-v[^"]*\)".*/\1/p' | head -1)
-	[ -n "$VERSION" ] || die "could not find a desktop-v* release; pass --version"
+	if [ -z "$VERSION" ]; then
+		# While the repository is private this is what you get: the API and
+		# every asset URL answer 404 to an anonymous request.
+		die "no desktop-v* release found.
+
+If the repository is still private, this script cannot reach it. Use the
+GitHub CLI instead:
+
+  gh release download desktop-v0.1.0 -R $REPO -p 'orchestrator_*_amd64.deb'
+  sudo apt-get install -y ./orchestrator_*_amd64.deb
+
+Otherwise pass --version <tag> explicitly."
+	fi
 fi
 BASE="https://github.com/$REPO/releases/download/$VERSION"
 ver=${VERSION#desktop-v}
