@@ -28,3 +28,14 @@ Second change (scrolling under Claude Code's fullscreen renderer):
 - Wheel button ids were 68..71 (64 + 4..7); bit 2 is the shift modifier in
   the mouse protocol, so every wheel report read as shift+wheel. They are now
   64..67 as in xterm.
+
+Third change (everything on screen underlined, faint and bold):
+
+- `CSI > 4 ; 2 m` (XTMODKEYS, how Claude Code turns on modifyOtherKeys) was
+  handled as SGR: the parser records the `>` prefix and then ignored it, so
+  the sequence read as SGR 4 (underline) plus SGR 2 (faint), and everything
+  drawn afterwards was underlined and dim. `_csiHandleSgr` now ignores CSI
+  sequences with a private prefix.
+- SGR 22 unset only faint, but it means "normal intensity" and Claude Code
+  closes every bold run with it (`ESC[1m … ESC[22m`), so bold latched on for
+  the rest of the session. It now unsets bold as well.

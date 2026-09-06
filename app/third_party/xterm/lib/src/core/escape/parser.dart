@@ -410,6 +410,15 @@ class EscapeParser {
   void _csiHandleSgr() {
     final params = _csi.params;
 
+    // `CSI > Ps ; Ps m` (XTMODKEYS) and the other private forms end in `m` but
+    // are not SGR. Claude Code sends `CSI > 4 ; 2 m` to turn on
+    // modifyOtherKeys, which read as SGR 4;2 and left every cell drawn after
+    // it underlined and faint.
+    final prefix = _csi.prefix;
+    if (prefix != null && prefix != Ascii.semicolon) {
+      return;
+    }
+
     if (params.isEmpty) {
       return handler.resetCursorStyle();
     }
@@ -451,6 +460,9 @@ class EscapeParser {
           handler.unsetCursorBold();
           continue;
         case 22:
+          // Normal intensity: clears bold as well as faint. Claude Code closes
+          // its bold runs with `22`, never with `21`.
+          handler.unsetCursorBold();
           handler.unsetCursorFaint();
           continue;
         case 23:
