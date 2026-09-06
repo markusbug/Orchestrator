@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,76 +8,21 @@ import (
 	"strings"
 )
 
-// label is the launchd job name. It matches the app's bundle id so the two
-// sit together in ~/Library/LaunchAgents.
-func label(name string) string { return "io.freedomfactory." + name }
-
 func plistPath(name string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "Library", "LaunchAgents", label(name)+".plist"), nil
+	return plistPathIn(home, name), nil
 }
 
-// logPaths returns the stdout and stderr files launchd writes to. Unlike
-// Linux there is no journal to read, so the job keeps its own log files.
-func logPaths(name string) (string, string, error) {
+// Unit renders the launchd property list for this user.
+func Unit(o Options) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", "", err
+		return ""
 	}
-	dir := filepath.Join(home, "Library", "Logs", "orchestrator")
-	return filepath.Join(dir, name+".log"), filepath.Join(dir, name+".err.log"), nil
-}
-
-// Unit renders the launchd property list.
-func Unit(o Options) string {
-	if o.Name == "" {
-		o.Name = "orchestrator"
-	}
-	out, errLog, _ := logPaths(o.Name)
-	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>Label</key>
-	<string>%s</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>%s</string>
-		<string>serve</string>
-	</array>
-	<key>RunAtLoad</key>
-	<true/>
-	<key>KeepAlive</key>
-	<dict>
-		<key>SuccessfulExit</key>
-		<false/>
-	</dict>
-	<key>ThrottleInterval</key>
-	<integer>2</integer>
-	<key>ProcessType</key>
-	<string>Interactive</string>
-	<key>EnvironmentVariables</key>
-	<dict>
-		<key>PATH</key>
-		<string>%s</string>
-	</dict>
-	<key>StandardOutPath</key>
-	<string>%s</string>
-	<key>StandardErrorPath</key>
-	<string>%s</string>
-</dict>
-</plist>
-`, esc(label(o.Name)), esc(o.Exe), esc(o.Path), esc(out), esc(errLog))
-}
-
-// esc escapes a value for an XML text node.
-func esc(s string) string {
-	var b strings.Builder
-	_ = xml.EscapeText(&b, []byte(s))
-	return b.String()
+	return Plist(o, home)
 }
 
 func run(name string, args ...string) error {
@@ -108,10 +52,11 @@ func Install(o Options) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
 	}
-	out, _, err := logPaths(o.Name)
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
+	out, _ := logPathsIn(home, o.Name)
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return "", err
 	}
@@ -187,10 +132,12 @@ func LogsArgs(name string) []string {
 	if name == "" {
 		name = "orchestrator"
 	}
-	out, errLog, err := logPaths(name)
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil
 	}
+	out, errLog := logPathsIn(home, name)
+	// -F rather than -f so the tail survives log rotation.
 	return []string{"tail", "-n", "200", "-F", out, errLog}
 }
 
