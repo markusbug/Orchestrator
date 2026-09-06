@@ -17,12 +17,14 @@ class OrchestratorTray with TrayListener {
     required this.onOpen,
     required this.onPair,
     required this.onQuit,
+    required this.onShutdown,
   });
 
   final DaemonController daemon;
   final VoidCallback onOpen;
   final VoidCallback onPair;
   final VoidCallback onQuit;
+  final VoidCallback onShutdown;
 
   bool _available = false;
   bool get available => _available;
@@ -94,9 +96,16 @@ class OrchestratorTray with TrayListener {
             disabled: !daemon.running,
           ),
           MenuItem.separator(),
-          // Quitting the window must never take the daemon down with it:
-          // sessions outliving the UI is the whole point of the product.
+          // Two exits, because they mean opposite things. Quitting the window
+          // must never take the daemon down with it -- sessions outliving the
+          // UI is the whole point of the product -- so stopping everything
+          // needs its own item. The ellipsis warns that it asks first.
           MenuItem(key: 'quit', label: 'Quit — sessions keep running'),
+          MenuItem(
+            key: 'shutdown',
+            label: 'Shut down Orchestrator…',
+            disabled: !daemon.running,
+          ),
         ],
       ),
     );
@@ -125,6 +134,8 @@ class OrchestratorTray with TrayListener {
         onPair();
       case 'quit':
         onQuit();
+      case 'shutdown':
+        onShutdown();
     }
   }
 

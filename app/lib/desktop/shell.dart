@@ -13,12 +13,20 @@ class DesktopApp extends StatelessWidget {
     super.key,
     required this.daemon,
     required this.pairRequests,
+    required this.shutdownRequests,
+    required this.onQuit,
   });
 
   final DaemonController daemon;
 
   /// Bumped by the tray's "Pair a device" item.
   final ValueNotifier<int> pairRequests;
+
+  /// Bumped by the tray's "Shut down Orchestrator" item.
+  final ValueNotifier<int> shutdownRequests;
+
+  /// Closes the app without touching the daemon.
+  final Future<void> Function() onQuit;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +35,12 @@ class DesktopApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: orchestratorTheme(Brightness.light),
       darkTheme: orchestratorTheme(Brightness.dark),
-      home: DesktopHome(daemon: daemon, pairRequests: pairRequests),
+      home: DesktopHome(
+        daemon: daemon,
+        pairRequests: pairRequests,
+        shutdownRequests: shutdownRequests,
+        onQuit: onQuit,
+      ),
     );
   }
 }
@@ -37,10 +50,14 @@ class DesktopHome extends StatefulWidget {
     super.key,
     required this.daemon,
     required this.pairRequests,
+    required this.shutdownRequests,
+    required this.onQuit,
   });
 
   final DaemonController daemon;
   final ValueNotifier<int> pairRequests;
+  final ValueNotifier<int> shutdownRequests;
+  final Future<void> Function() onQuit;
 
   @override
   State<DesktopHome> createState() => _DesktopHomeState();
@@ -51,6 +68,7 @@ class _DesktopHomeState extends State<DesktopHome> {
   Timer? _ticker;
   bool _startAtLogin = false;
   bool _busy = false;
+  bool _confirming = false;
   String? _message;
 
   DaemonController get d => widget.daemon;
@@ -60,17 +78,79 @@ class _DesktopHomeState extends State<DesktopHome> {
     super.initState();
     _loadStartAtLogin();
     widget.pairRequests.addListener(_onPairRequested);
+    widget.shutdownRequests.addListener(_confirmShutdown);
   }
 
   @override
   void dispose() {
     widget.pairRequests.removeListener(_onPairRequested);
+    widget.shutdownRequests.removeListener(_confirmShutdown);
     _ticker?.cancel();
     super.dispose();
   }
 
   void _onPairRequested() {
     if (d.running) _showPair();
+  }
+
+  /// Stops the daemon and closes the app. Unlike quitting, this ends every
+  /// live session, so it asks first and says how many are about to go.
+  Future<void> _confirmShutdown() async {
+    // The tray item stays clickable while the dialog is up, and a second one
+    // stacked behind the first would leave the user answering twice.
+    if (_busy || _confirming || !d.running) return;
+    setState(() => _confirming = true);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Shut Orchestrator down?'),
+        content: Text(_shutdownWarning()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Shut down'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _confirming = false);
+    if (ok != true) return;
+    await _shutDown();
+  }
+
+  String _shutdownWarning() {
+    final sessions = d.status?.sessions ?? 0;
+    final again = _startAtLogin
+        ? ' It starts again the next time you log in.'
+        : '';
+    return switch (sessions) {
+      0 =>
+        'The background service will stop, and your phone will not be able to '
+            'reach this machine until Orchestrator is started again.$again',
+      1 =>
+        'This stops the background service and ends the session running on '
+            'this machine. Unsaved work in it is lost.$again',
+      _ =>
+        'This stops the background service and ends all $sessions sessions '
+            'running on this machine. Unsaved work in them is lost.$again',
+    };
+  }
+
+  Future<void> _shutDown() async {
+    await _run(d.stopService);
+    if (!mounted) return;
+    // A failed stop leaves the error on screen and the app open: closing the
+    // window here would hide the one thing that explains what went wrong.
+    if (_message == null) await widget.onQuit();
   }
 
   Future<void> _loadStartAtLogin() async {
@@ -306,10 +386,21 @@ class _DesktopHomeState extends State<DesktopHome> {
               style: t.textTheme.titleMedium,
             ),
             const Spacer(),
+            // The tray is the natural home for this pair, but stock GNOME has
+            // no tray at all, so the window has to offer both too or those
+            // desktops get no way to stop the daemon.
             if (!d.running)
               TextButton(
                 onPressed: _busy ? null : () => _run(d.startService),
                 child: const Text('Start'),
+              )
+            else
+              TextButton(
+                onPressed: _busy ? null : _confirmShutdown,
+                style: TextButton.styleFrom(
+                  foregroundColor: t.colorScheme.error,
+                ),
+                child: const Text('Shut down…'),
               ),
           ],
         ),

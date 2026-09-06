@@ -50,12 +50,17 @@ The commands it uses:
 | `orchestrator pair --json` | the QR (the `uri` field is what the QR encodes) |
 | `orchestrator install --json` | the setup button |
 | `orchestrator _service` | installed / enabled / running |
-| `orchestrator _service enable\|disable\|start\|stop` | the start-at-login switch and the tray |
+| `orchestrator _service enable\|disable\|start\|stop` | the start-at-login switch, and Start / Shut down |
 | `orchestrator _paths` | where state lives |
 
 The `_`-prefixed ones are internal. The admin API has no event stream, so the
 app polls: every 2 s with the window open, every 20 s when it is only a tray
 icon.
+
+`_service stop` is not just `systemctl stop`: a daemon started by hand is not
+one the service manager owns, so it falls back to SIGTERM on the pid from
+`status` and waits for the admin socket to go quiet. Shutting down has to work
+whichever way the daemon was started, or it is not a shutdown.
 
 ## Where the daemon binary lives
 

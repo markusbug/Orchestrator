@@ -82,7 +82,9 @@ Not yet. The daemon has no ConPTY support, so the machine side is Unix-only toda
 
 The window offers one button to start the background service, then shows a QR code. Scan
 it with the phone app and you are done. Closing the window leaves Orchestrator in the
-tray or menu bar; quitting from there leaves your sessions running.
+tray or menu bar; quitting from there leaves your sessions running. To stop everything,
+use **Shut down Orchestrator** in the tray menu or on the status card — it ends every
+live session, so it asks first.
 
 ## Security
 

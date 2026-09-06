@@ -39,6 +39,12 @@ Future<void> main() async {
 
   final daemon = DaemonController();
   final pairRequests = ValueNotifier<int>(0);
+  final shutdownRequests = ValueNotifier<int>(0);
+
+  Future<void> quit() async {
+    await tearDown();
+    exit(0);
+  }
 
   final tray = OrchestratorTray(
     daemon: daemon,
@@ -47,9 +53,12 @@ Future<void> main() async {
       pairRequests.value++;
       _showWindow();
     },
-    onQuit: () async {
-      await tearDown();
-      exit(0);
+    onQuit: quit,
+    // The tray cannot host a dialog, and stopping the daemon ends live
+    // sessions, so this hands off to the window to ask first.
+    onShutdown: () {
+      shutdownRequests.value++;
+      _showWindow();
     },
   );
   await tray.init();
@@ -63,7 +72,14 @@ Future<void> main() async {
   unawaited(daemon.start());
   await _listenForRaise();
 
-  runApp(DesktopApp(daemon: daemon, pairRequests: pairRequests));
+  runApp(
+    DesktopApp(
+      daemon: daemon,
+      pairRequests: pairRequests,
+      shutdownRequests: shutdownRequests,
+      onQuit: quit,
+    ),
+  );
 }
 
 Future<void> tearDown() async {

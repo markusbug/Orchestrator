@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
+	"time"
 
 	"github.com/markusbug/Orchestrator/daemon/internal/admin"
 	"github.com/markusbug/Orchestrator/daemon/internal/core"
@@ -107,7 +109,7 @@ func runService(args []string) error {
 		case "start":
 			return service.Start("")
 		case "stop":
-			return service.Stop("")
+			return stopDaemon(*dir)
 		case "enable":
 			return service.SetEnabled("", true)
 		case "disable":
@@ -136,4 +138,50 @@ func runService(args []string) error {
 		}
 	}
 	return json.NewEncoder(os.Stdout).Encode(out)
+}
+
+// stopDaemon brings the daemon down however it happens to have been started.
+// `systemctl stop` only reaches a daemon its service manager owns; one
+// started by hand -- a dev run, or `orchestrator serve` in a terminal -- has
+// to be signalled directly, and the desktop app's "shut down" item has to
+// work in both cases or it is not a shutdown.
+func stopDaemon(dir string) error {
+	p, err := paths(dir)
+	if err != nil {
+		return err
+	}
+	cl := admin.NewClient(p.AdminSocket)
+	st, err := cl.Status()
+	if err != nil {
+		return nil // already down; nothing to do
+	}
+	if installed, _ := service.Installed(""); installed {
+		if err := service.Stop(""); err == nil && waitForExit(cl) {
+			return nil
+		}
+	}
+	// SIGTERM, not SIGKILL: the daemon closes sessions and flushes its
+	// database on the way out, and a half-written db is worse than a daemon
+	// that took a moment longer to go.
+	if st.PID > 0 {
+		if proc, ferr := os.FindProcess(st.PID); ferr == nil {
+			_ = proc.Signal(syscall.SIGTERM)
+		}
+	}
+	if waitForExit(cl) {
+		return nil
+	}
+	return fmt.Errorf("the daemon (pid %d) did not stop", st.PID)
+}
+
+// waitForExit polls the admin socket until it stops answering. The daemon
+// waits on its own children first, so this is seconds, not milliseconds.
+func waitForExit(cl *admin.Client) bool {
+	for range 100 {
+		if _, err := cl.Status(); err != nil {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return false
 }
