@@ -10,10 +10,22 @@ This directory is everything needed to run one: a systemd unit, kernel
 tuning, an env template, and `install.sh`. The hosted relay and self-hosted
 ones run the identical binary.
 
+## The hosted instance
+
+`relay.markushaas.com`, live since 2026-09-06 on a Hetzner CX23 (Ubuntu 24.04,
+IPv4 only, no AAAA records). It was brought up with exactly the steps below,
+using `ufw` rather than a provider firewall, and holds a production Let's
+Encrypt certificate that autocert renews. The deploy files sit in the admin
+user's `~/relay-deploy` on the box, so an upgrade is: build with
+`make build-relay-linux`, `scp dist/relay_linux_amd64` there, then
+`sudo relay-install --binary ~/relay-deploy/relay_linux_amd64 --upgrade`.
+Still to do: an external uptime and certificate-expiry monitor (below), delete
+protection in the console.
+
 ## What you need
 
 - A small VPS: Ubuntu 24.04, 2 to 4 GB RAM, public IPv4 (and IPv6). A Hetzner
-  CX22 is plenty to start. Enable delete protection and use a persistent
+  CX23 is plenty to start. Enable delete protection and use a persistent
   primary IP so DNS survives a rebuild.
 - A domain you control, e.g. `relay.example.com`.
 - The provider's firewall allowing inbound TCP 22, TCP 443 and ICMP. Prefer it

@@ -1,6 +1,6 @@
 # Relay design
 
-Status: implemented in `daemon/internal/relay` and `daemon/cmd/relay` (2026-09-06); not yet deployed. Operations: [deploy/relay/README.md](../deploy/relay/README.md). Implements item 3 of PLAN.md §2.4.
+Status: implemented in `daemon/internal/relay` and `daemon/cmd/relay` and deployed as the hosted relay at `relay.markushaas.com` (2026-09-06, verified from a phone on cellular). Daemons use it by default (`config.DefaultRelayURL`); `orchestrator relay off` opts out. Operations: [deploy/relay/README.md](../deploy/relay/README.md). Implements item 3 of PLAN.md §2.4.
 
 ## Goal
 
@@ -96,10 +96,11 @@ Phones do not use the API; they connect to `<hostid>.<domain>:443` with TLS. On 
 
 ## Deployment
 
-One static Go binary, one systemd unit, one small Hetzner box. `deploy/relay/` holds the unit, kernel tuning, an install/upgrade/rollback script and the runbook. A `relay-v*` tag publishes `relay_linux_amd64`, `relay_linux_arm64`, `relay-deploy.tar.gz` and checksums on a GitHub release. Self-hosters run the identical binary and point the daemon at it with `orchestrator relay set https://relay.example`; the hosted relay is compiled in as the default once it exists (`config.DefaultRelayURL`).
+One static Go binary, one systemd unit, one small Hetzner box. The hosted instance is `relay.markushaas.com` (Hetzner CX23, Ubuntu 24.04, IPv4 only, Let's Encrypt via autocert). `deploy/relay/` holds the unit, kernel tuning, an install/upgrade/rollback script and the runbook. A `relay-v*` tag publishes `relay_linux_amd64`, `relay_linux_arm64`, `relay-deploy.tar.gz` and checksums on a GitHub release. Self-hosters run the identical binary and point the daemon at it with `orchestrator relay set https://relay.example`; the hosted relay is compiled in as the default once it exists (`config.DefaultRelayURL`).
 
 ## Open questions
 
 - Abuse: enforce bytes per host per day on the hosted relay (counters exist).
-- Whether the hosted relay is free, donation-funded, or paid. See PLAN.md §9.
+- Whether the hosted relay stays free, becomes donation-funded, or paid. It is free while it serves a handful of hosts. See PLAN.md §9.
+- Uptime and certificate-expiry monitoring for the hosted relay is not set up yet.
 - Whether to keep the LAN listener once the relay exists, or drop inbound entirely and simplify firewall handling away.

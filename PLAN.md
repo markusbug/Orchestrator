@@ -74,7 +74,7 @@ Single WebSocket per (client, host). After TLS + auth handshake:
 
 1. **LAN (M1).** Phone connects directly to the host IP/port from the QR. mDNS advertisement (`_orchestrator._tcp`) so the app can rediscover a host whose IP changed.
 2. **Remote via VPN (M1).** Tailscale/WireGuard/ZeroTier make the host reachable anywhere with zero Orchestrator infrastructure. The desktop app detects Tailscale and shows the stable tailnet address in the QR. Documented as the recommended remote path.
-3. **Relay (later).** Design in [docs/RELAY.md](docs/RELAY.md). Optional hosted or self-hosted relay: daemon opens an outbound WSS, phone connects to the relay by host id, relay forwards opaque frames. End-to-end encrypted with the pairing keys so the relay is a dumb pipe. Also the natural place to fan out push notifications.
+3. **Relay (done 2026-09-06).** Design in [docs/RELAY.md](docs/RELAY.md). Hosted at `relay.markushaas.com` and on by default; self-hosting runs the same binary. The daemon opens an outbound WSS, the phone connects to the relay by host id over TLS routed by SNI, and the relay forwards opaque bytes. End-to-end encrypted with the pairing keys so the relay is a dumb pipe. Also the natural place to fan out push notifications.
 
 **Zero network configuration is a product requirement.** A user must never open a port, edit a firewall, or read an IP address to use Orchestrator. The first phone pairing on the developer's laptop failed because `ufw` silently dropped the daemon's port; that is exactly the class of problem end users will not diagnose. The path out of it:
 
@@ -168,19 +168,19 @@ Orchestrator/
 
 **M5 — Robustness.** Claude Code hooks → attention flag; stale-session resume via `claude --continue`; conversation list from `~/.claude/projects`; per-session host processes so daemon upgrades don't kill sessions; webhook notifications; mDNS rediscovery.
 
-**M6 — Remote & notifications.** Relay service (self-hostable, E2E encrypted); APNs/FCM push for attention events; multi-host polish; iPad and desktop terminal layouts; auto-update.
+**M6 — Remote & notifications.** Relay service (self-hostable, E2E encrypted) — done, hosted at `relay.markushaas.com`; APNs/FCM push for attention events; multi-host polish; iPad and desktop terminal layouts; auto-update.
 
 ## 8. Risks and mitigations
 
 - **Terminal width on phones.** Claude Code's TUI wants ~80 columns; a portrait phone at a readable font gives ~45. Mitigate with a compact default font, pinch-zoom, landscape mode, and the daemon reporting the phone's size so Ink lays out for it. Structured mode is the long-term answer.
 - **Daemon restarts kill sessions.** Mitigated by `claude --continue` resume in M5, and structurally by per-session host processes.
-- **Remote reachability.** Tailscale covers most users with zero infra; the relay is the no-setup path later.
+- **Remote reachability.** The hosted relay is the default no-setup path; LAN and Tailscale remain the faster paths the app tries first.
 - **Signing costs and friction.** Apple Developer ID and a Windows code-signing certificate are needed for a smooth install. Budget for them before M4.
 - **Windows ConPTY quirks.** Test early (M1) on real Windows; keep Windows shell defaults sane.
 - **Security exposure.** A paired phone is a shell on the laptop. Pairing must be short-lived, keys hardware-backed on the phone, and revocation one tap away.
 
 ## 9. Open decisions
 
-- Hosted relay vs. self-hosted only, and whether it is a paid service.
+- Whether the hosted relay (free today) stays free, or becomes donation-funded or paid once it carries more than a handful of hosts.
 - Whether the desktop app should also be the CLI's host for sessions on the local screen (attach to a session in a desktop window), or stay a pure control panel. Plan assumes it can attach, since the terminal widget is shared.
 - Minimum OS versions (proposal: Ubuntu 22.04+, macOS 13+, Windows 10 1903+ for ConPTY, iOS 16+, Android 8+).
