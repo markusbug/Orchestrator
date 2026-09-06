@@ -479,3 +479,104 @@ func TestHealthz(t *testing.T) {
 }
 
 var _ = json.Marshal
+
+// dialRaw opens a socket without pinning or failing the test, so callers can
+// inspect how the server ends it.
+func dialRaw(t *testing.T, e *env) (*websocket.Conn, error) {
+	t.Helper()
+	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	url := "wss" + strings.TrimPrefix(e.srv.URL, "https") + "/ws"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ws, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPClient: &http.Client{Transport: tr}})
+	return ws, err
+}
+
+func shortAuthDeadline(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := authDeadline
+	authDeadline = d
+	t.Cleanup(func() { authDeadline = old })
+}
+
+func TestUnauthenticatedConnectionTimesOut(t *testing.T) {
+	shortAuthDeadline(t, 150*time.Millisecond)
+	e := newEnv(t, false)
+	c := e.dial(t)
+	c.hello("")
+	// The read timeout is far past the deadline, so an error that arrives
+	// early is the server closing the connection rather than the client
+	// giving up.
+	start := time.Now()
+	if _, err := c.next(5 * time.Second); err == nil {
+		t.Fatal("unauthenticated connection stayed open and sent a frame")
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("connection lived %v; the deadline is %v", elapsed, authDeadline)
+	}
+}
+
+func TestAuthenticatedConnectionSurvivesDeadline(t *testing.T) {
+	shortAuthDeadline(t, 150*time.Millisecond)
+	// Debug auto-authenticates loopback, which is what httptest serves.
+	e := newEnv(t, true)
+	c := e.dial(t)
+	if h := c.hello(""); h.AuthNeeded {
+		t.Fatal("debug loopback should not need auth")
+	}
+	time.Sleep(400 * time.Millisecond)
+	c.call("ping", nil, nil) // fails the test if the socket was closed
+}
+
+func TestUnauthenticatedConnectionsAreCapped(t *testing.T) {
+	e := newEnv(t, false)
+	open := make([]*websocket.Conn, 0, maxUnauthed)
+	t.Cleanup(func() {
+		for _, ws := range open {
+			ws.CloseNow()
+		}
+	})
+	for i := 0; i < maxUnauthed; i++ {
+		ws, err := dialRaw(t, e)
+		if err != nil {
+			t.Fatalf("connection %d refused below the cap: %v", i, err)
+		}
+		open = append(open, ws)
+	}
+	// rejected reports whether the server turned this connection away. An
+	// accepted connection sends nothing, so waiting out the timeout is the
+	// answer "not rejected".
+	rejected := func(ws *websocket.Conn, wait time.Duration) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), wait)
+		defer cancel()
+		_, _, err := ws.Read(ctx)
+		return websocket.CloseStatus(err) == websocket.StatusTryAgainLater
+	}
+	ws, err := dialRaw(t, e)
+	if err != nil {
+		t.Fatalf("dial past the cap: %v", err)
+	}
+	if !rejected(ws, 3*time.Second) {
+		ws.CloseNow()
+		t.Fatal("connection past the cap was accepted")
+	}
+	ws.CloseNow()
+
+	// Closing one frees its slot for the next client.
+	open[0].CloseNow()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		next, err := dialRaw(t, e)
+		if err == nil {
+			free := !rejected(next, 300*time.Millisecond)
+			next.CloseNow()
+			if free {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("slot was not released when a connection closed")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

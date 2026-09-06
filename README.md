@@ -84,6 +84,14 @@ The window offers one button to start the background service, then shows a QR co
 it with the phone app and you are done. Closing the window leaves Orchestrator in the
 tray or menu bar; quitting from there leaves your sessions running.
 
+## Security
+
+A paired phone gets a real terminal on your machine, so pairing a device grants the
+same access as sitting at your keyboard. Traffic is end-to-end encrypted with your
+machine's own certificate, which the phone pins — the relay carries bytes it cannot
+read. [SECURITY.md](SECURITY.md) has the threat model, what the relay can and cannot
+see, and how to report a vulnerability.
+
 ## Status
 
 Working end to end: the daemon (Go, `daemon/`) on Ubuntu, the desktop app (Flutter,

@@ -22,6 +22,12 @@ const (
 	replayChunk       = 32 * 1024
 )
 
+// authDeadline is how long a connection may stay unauthenticated. Hello and
+// auth are one round trip each, so this is generous; without it a peer can
+// hold a socket open forever by doing nothing, or by pinging, which dispatch
+// answers before authentication. A variable so tests can shorten it.
+var authDeadline = 30 * time.Second
+
 type outMsg struct {
 	typ  websocket.MessageType
 	data []byte
@@ -48,6 +54,7 @@ type conn struct {
 	mu          sync.Mutex
 	helloDone   bool
 	authed      bool
+	released    bool // gave back the srv.unauthed slot
 	deviceID    string
 	serverNonce []byte
 	clientNonce []byte
@@ -65,12 +72,23 @@ func newConn(s *Server, ws *websocket.Conn, ip string, loopback bool) *conn {
 func (c *conn) run(parent context.Context) {
 	c.ctx, c.cancel = context.WithCancel(parent)
 	defer c.cleanup()
+	// Cancelling is enough to end the connection: reader and writer both
+	// block on c.ctx, and cleanup closes the socket. Writing a reason here
+	// would race the writer goroutine, which owns every write.
+	deadline := time.AfterFunc(authDeadline, func() {
+		if !c.isAuthed() {
+			c.srv.Log.Debug("closing unauthenticated connection", "ip", c.ip, "after", authDeadline)
+			c.cancel()
+		}
+	})
+	defer deadline.Stop()
 	go c.writer()
 	c.reader()
 }
 
 func (c *conn) cleanup() {
 	c.cancel()
+	c.releaseUnauthed()
 	c.mu.Lock()
 	if c.unsub != nil {
 		c.unsub()
@@ -197,6 +215,18 @@ func (c *conn) isAuthed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.authed
+}
+
+// releaseUnauthed gives back the pending-authentication slot, once, whether
+// the connection authenticated or went away first.
+func (c *conn) releaseUnauthed() {
+	c.mu.Lock()
+	was := c.released
+	c.released = true
+	c.mu.Unlock()
+	if !was {
+		c.srv.unauthed.Add(-1)
+	}
 }
 
 // dispatch handles one JSON message; returns false to close the connection.
@@ -516,6 +546,7 @@ func (c *conn) markAuthed(deviceID string) {
 		})
 	}
 	c.mu.Unlock()
+	c.releaseUnauthed()
 }
 
 func (c *conn) handleAttach(rid int64, req protocol.SessionAttach) {

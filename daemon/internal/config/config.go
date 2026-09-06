@@ -133,11 +133,15 @@ func DefaultPaths(overrideDir string) (Paths, error) {
 		}
 	}
 	// Unix socket paths are limited to ~104 bytes; fall back to a short
-	// per-directory path when the config dir is deeply nested.
+	// per-directory path when the config dir is deeply nested. The socket
+	// goes inside its own directory rather than straight into the temp
+	// directory: EnsureDirs makes that 0700, so no other user can reach the
+	// socket even for the moment before it is chmodded, and no other user
+	// can squat the path we are about to bind.
 	if len(sock) > maxSockPath {
 		h := fnv.New32a()
 		h.Write([]byte(dir))
-		sock = filepath.Join(os.TempDir(), fmt.Sprintf("orchestrator-%d-%08x.sock", os.Getuid(), h.Sum32()))
+		sock = filepath.Join(os.TempDir(), fmt.Sprintf("orchestrator-%d-%08x", os.Getuid(), h.Sum32()), "admin.sock")
 	}
 	return Paths{
 		Dir:         dir,
@@ -354,5 +358,36 @@ func EnsureDirs(p Paths) error {
 	if err := os.MkdirAll(p.Dir, 0o700); err != nil {
 		return err
 	}
-	return os.MkdirAll(filepath.Dir(p.CertFile), 0o700)
+	if err := os.MkdirAll(filepath.Dir(p.CertFile), 0o700); err != nil {
+		return err
+	}
+	return EnsurePrivateDir(filepath.Dir(p.AdminSocket))
+}
+
+// EnsurePrivateDir makes dir exist as a real directory that only this user
+// can enter. The admin socket has no authentication beyond its permissions,
+// so a directory anyone else can traverse would hand them an API that issues
+// pairing codes; one anyone else owns could be a squatted path whose socket
+// answers the CLI in the daemon's place.
+func EnsurePrivateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	// Lstat, not Stat: a symlink planted where the directory should be must
+	// not pass for the directory.
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("config: %s is not a directory", dir)
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		// Chmod fails for a directory owned by someone else, which is the
+		// case worth refusing rather than binding into.
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return fmt.Errorf("config: %s must not be readable by other users: %w", dir, err)
+		}
+	}
+	return nil
 }

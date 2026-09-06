@@ -81,8 +81,9 @@ func (l *limits) enterPeek(ip string) (release func(), ok bool) {
 	}, true
 }
 
-// gc drops buckets that have refilled completely.
+// gc drops buckets that have refilled completely and expired auth lockouts.
 func (l *limits) gc() {
+	l.auth.GC()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()

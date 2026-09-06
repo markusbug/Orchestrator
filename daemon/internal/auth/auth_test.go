@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -138,5 +139,61 @@ func TestDecodeB64(t *testing.T) {
 	}
 	if _, err := DecodeB64("!!!"); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestLimiterForgetsExpiredKeys(t *testing.T) {
+	now := time.Unix(0, 0)
+	l := NewLimiter(3, time.Minute, 5*time.Minute, func() time.Time { return now })
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("10.0.0.%d", i)
+		l.Fail(key)
+		l.Fail(key)
+		l.Fail(key)
+	}
+	if l.Len() != 100 {
+		t.Fatalf("tracked %d keys, want 100", l.Len())
+	}
+	// Still locked out: nothing may be forgotten yet.
+	now = now.Add(2 * time.Minute)
+	l.GC()
+	if l.Len() != 100 {
+		t.Fatalf("dropped live lockouts: %d keys left", l.Len())
+	}
+	if l.Allow("10.0.0.0") {
+		t.Fatal("lockout ended early")
+	}
+	// Past both the window and the lockout, keys that never came back must
+	// not be retained.
+	now = now.Add(10 * time.Minute)
+	l.GC()
+	if l.Len() != 0 {
+		t.Fatalf("expired keys retained: %d", l.Len())
+	}
+	if !l.Allow("10.0.0.0") {
+		t.Fatal("key should be allowed again")
+	}
+}
+
+func TestLimiterCapsKeys(t *testing.T) {
+	now := time.Unix(0, 0)
+	l := NewLimiter(3, time.Hour, time.Hour, func() time.Time { return now })
+	l.maxKeys = 64
+	// A flood of distinct keys inside one window, so nothing ages out and
+	// only the cap can bound the maps.
+	for i := 0; i < 4000; i++ {
+		l.Fail(fmt.Sprintf("10.%d.%d.%d", i/65536, i/256%256, i%256))
+		now = now.Add(time.Millisecond)
+	}
+	if n := l.Len(); n > l.maxKeys {
+		t.Fatalf("tracked %d keys, cap is %d", n, l.maxKeys)
+	}
+	// The most recent failures are the ones worth keeping.
+	last := fmt.Sprintf("10.%d.%d.%d", 3999/65536, 3999/256%256, 3999%256)
+	l.mu.Lock()
+	_, kept := l.failures[last]
+	l.mu.Unlock()
+	if !kept {
+		t.Fatal("eviction dropped the newest key")
 	}
 }

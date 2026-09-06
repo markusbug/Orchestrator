@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -35,11 +36,20 @@ func connContext(ctx context.Context, c net.Conn) context.Context {
 	return ctx
 }
 
+// maxUnauthed caps connections that have not authenticated yet. A phone
+// authenticates within a round trip of connecting, so this is far above any
+// real backlog; it stops an unauthenticated peer on the LAN from holding
+// sockets and goroutines open in bulk.
+const maxUnauthed = 64
+
 // Server is the TLS + WebSocket front end.
 type Server struct {
 	Core *core.Core
 	Log  *slog.Logger
 	http *http.Server
+
+	// unauthed counts connections still waiting to authenticate.
+	unauthed atomic.Int64
 }
 
 // Handler builds the HTTP mux.
@@ -72,6 +82,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ws.SetReadLimit(1 << 20)
+	if n := s.unauthed.Add(1); n > maxUnauthed {
+		s.unauthed.Add(-1)
+		s.Log.Warn("refusing connection: too many unauthenticated", "peer", r.RemoteAddr, "max", maxUnauthed)
+		_ = ws.Close(websocket.StatusTryAgainLater, "too many unauthenticated connections")
+		return
+	}
 	viaRelay := r.Context().Value(viaRelayKey{}) != nil
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	ip := net.ParseIP(host)

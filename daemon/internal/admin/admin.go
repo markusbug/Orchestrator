@@ -12,9 +12,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/markusbug/Orchestrator/daemon/internal/config"
 	"github.com/markusbug/Orchestrator/daemon/internal/core"
 	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
 	"github.com/markusbug/Orchestrator/daemon/internal/relay/client"
@@ -147,7 +149,16 @@ func (s *Server) Handler() http.Handler {
 }
 
 // Listen starts serving on the unix socket path.
+//
+// The socket carries no authentication, so its directory is the access
+// control. net.Listen creates the socket with 0777 &^ umask and the chmod
+// below only narrows it afterwards, leaving a window; a private parent
+// directory closes that window and stops another user from squatting the
+// path before we bind it.
 func (s *Server) Listen(path string) error {
+	if err := config.EnsurePrivateDir(filepath.Dir(path)); err != nil {
+		return err
+	}
 	_ = os.Remove(path)
 	ln, err := net.Listen("unix", path)
 	if err != nil {

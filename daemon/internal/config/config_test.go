@@ -221,3 +221,78 @@ func TestTomlString(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureDirsMakesSocketDirPrivate(t *testing.T) {
+	dir := t.TempDir()
+	p, err := DefaultPaths(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureDirs(p); err != nil {
+		t.Fatal(err)
+	}
+	sockDir := filepath.Dir(p.AdminSocket)
+	fi, err := os.Stat(sockDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("%s is %v; other users must not be able to enter it", sockDir, fi.Mode().Perm())
+	}
+}
+
+func TestLongConfigDirGetsPrivateSocketDir(t *testing.T) {
+	// A config directory deep enough to blow the unix socket path limit
+	// falls back to the temp directory, which every user can write to.
+	deep := filepath.Join(t.TempDir(), strings.Repeat("nested/", 20))
+	if err := os.MkdirAll(deep, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	p, err := DefaultPaths(deep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(p.AdminSocket) == os.TempDir() {
+		t.Fatalf("socket %s sits directly in the shared temp directory", p.AdminSocket)
+	}
+	if err := EnsureDirs(p); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(filepath.Dir(p.AdminSocket)) })
+	fi, err := os.Stat(filepath.Dir(p.AdminSocket))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o700 {
+		t.Fatalf("socket dir is %v, want 0700", fi.Mode().Perm())
+	}
+}
+
+func TestEnsurePrivateDirRefusesWorldReadable(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sock")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsurePrivateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(dir)
+	if fi.Mode().Perm() != 0o700 {
+		t.Fatalf("dir left at %v; it should have been narrowed", fi.Mode().Perm())
+	}
+}
+
+func TestEnsurePrivateDirRefusesSymlink(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := EnsurePrivateDir(link); err == nil {
+		t.Fatal("a symlink was accepted as the socket directory")
+	}
+}
