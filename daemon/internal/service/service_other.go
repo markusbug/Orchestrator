@@ -22,3 +22,9 @@ func Start(name string) error { return ErrUnsupported }
 
 // Stop is not supported on this platform yet.
 func Stop(name string) error { return ErrUnsupported }
+
+// SetEnabled is not supported on this platform yet.
+func SetEnabled(name string, on bool) error { return ErrUnsupported }
+
+// Installed is not supported on this platform yet.
+func Installed(name string) (bool, error) { return false, ErrUnsupported }

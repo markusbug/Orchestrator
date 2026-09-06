@@ -146,3 +146,45 @@ func Stop(name string) error {
 	}
 	return run("systemctl", "--user", "stop", name+".service")
 }
+
+// SetEnabled changes whether the service starts at login without touching
+// whether it is running now: opting out of autostart must not kill live
+// sessions. Enabling requires the unit to exist, so Install first.
+func SetEnabled(name string, on bool) error {
+	if name == "" {
+		name = "orchestrator"
+	}
+	p, err := unitPath(name)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(p); err != nil {
+		return fmt.Errorf("service is not installed: %w", err)
+	}
+	if !on {
+		return run("systemctl", "--user", "disable", name+".service")
+	}
+	if err := run("systemctl", "--user", "enable", name+".service"); err != nil {
+		return err
+	}
+	if u := os.Getenv("USER"); u != "" {
+		_ = run("loginctl", "enable-linger", u)
+	}
+	return nil
+}
+
+// Installed reports whether the unit file exists.
+func Installed(name string) (bool, error) {
+	if name == "" {
+		name = "orchestrator"
+	}
+	p, err := unitPath(name)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(p)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
+}

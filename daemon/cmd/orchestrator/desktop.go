@@ -102,18 +102,26 @@ func runService(args []string) error {
 			return service.Start("")
 		case "stop":
 			return service.Stop("")
+		case "enable":
+			return service.SetEnabled("", true)
+		case "disable":
+			// Deliberately not Uninstall: opting out of start-at-login must
+			// leave a running daemon alone, or live sessions would die.
+			return service.SetEnabled("", false)
 		case "status":
 		default:
-			return fmt.Errorf("usage: orchestrator _service [status | start | stop]")
+			return fmt.Errorf("usage: orchestrator _service [status | start | stop | enable | disable]")
 		}
 	}
 	enabled, err := service.Enabled("")
 	if err != nil && !errors.Is(err, service.ErrUnsupported) {
 		return err
 	}
+	installed, _ := service.Installed("")
 	out := map[string]any{
 		"supported": !errors.Is(err, service.ErrUnsupported),
-		"enabled":   enabled,
+		"installed": installed,
+		"enabled":   installed && enabled,
 		"running":   false,
 	}
 	if p, perr := paths(*dir); perr == nil {

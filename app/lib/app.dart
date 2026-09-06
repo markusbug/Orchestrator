@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'net/app_model.dart';
 import 'services/settings.dart';
+import 'theme.dart';
 import 'ui/hosts_screen.dart';
 
 /// Makes the [AppModel] available to the widget tree and rebuilds
@@ -31,22 +32,12 @@ class OrchestratorApp extends StatelessWidget {
         listenable: model.settings,
         builder: (context, _) {
           final Settings s = model.settings;
-          const seed = Color(0xFFD97757);
           return MaterialApp(
             title: 'Orchestrator',
             debugShowCheckedModeBanner: false,
             themeMode: s.themeMode,
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(seedColor: seed),
-              useMaterial3: true,
-            ),
-            darkTheme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: seed,
-                brightness: Brightness.dark,
-              ),
-              useMaterial3: true,
-            ),
+            theme: orchestratorTheme(Brightness.light),
+            darkTheme: orchestratorTheme(Brightness.dark),
             home: const HostsScreen(),
           );
         },

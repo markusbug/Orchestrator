@@ -177,9 +177,9 @@ func Enabled(name string) (bool, error) {
 		}
 		return false, err
 	}
-	// The plist always has RunAtLoad, so being loaded is the same as being
-	// enabled; an unloaded plist left on disk is not.
-	return exec.Command("launchctl", "print", domain()+"/"+label(name)).Run() == nil, nil
+	// The plist always has RunAtLoad, so an installed job starts at login
+	// unless launchctl was told otherwise.
+	return !disabled(name), nil
 }
 
 // LogsArgs returns the command to follow logs.
@@ -210,4 +210,57 @@ func Stop(name string) error {
 		name = "orchestrator"
 	}
 	return run("launchctl", "kill", "TERM", domain()+"/"+label(name))
+}
+
+// SetEnabled changes whether the service starts at login without touching
+// whether it is running now: opting out of autostart must not kill live
+// sessions. launchctl disable survives reboots, which is exactly the flag
+// that belongs behind a start-at-login switch.
+func SetEnabled(name string, on bool) error {
+	if name == "" {
+		name = "orchestrator"
+	}
+	p, err := plistPath(name)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(p); err != nil {
+		return fmt.Errorf("service is not installed: %w", err)
+	}
+	verb := "disable"
+	if on {
+		verb = "enable"
+	}
+	return run("launchctl", verb, domain()+"/"+label(name))
+}
+
+// disabled reports whether launchctl has the job on its disabled list, which
+// is where `launchctl disable` puts it and where it stays across reboots.
+func disabled(name string) bool {
+	out, err := exec.Command("launchctl", "print-disabled", domain()).CombinedOutput()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, `"`+label(name)+`"`) {
+			return strings.Contains(line, "true")
+		}
+	}
+	return false
+}
+
+// Installed reports whether the LaunchAgent plist exists.
+func Installed(name string) (bool, error) {
+	if name == "" {
+		name = "orchestrator"
+	}
+	p, err := plistPath(name)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(p)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
