@@ -12,12 +12,11 @@ import (
 
 // host is an authenticated daemon control connection.
 type host struct {
-	id      string
-	ws      *websocket.Conn
-	peer    string
-	version string
-	since   time.Time
-	seen    *atomic.Int64 // unix nanos of the last frame or ping from the daemon
+	id    string
+	ws    *websocket.Conn
+	peer  string
+	since time.Time
+	seen  *atomic.Int64 // unix nanos of the last frame or ping from the daemon
 
 	sendq chan []byte   // drained by writer; the only goroutine that writes
 	done  chan struct{} // closed when the control loop has exited
@@ -110,13 +109,12 @@ func (h *host) dialAnswered() {
 
 // pending is a phone connection waiting for its daemon to dial.
 type pending struct {
-	token   string
-	host    *host
-	phone   net.Conn
-	hello   []byte
-	peer    string
-	created time.Time
-	timer   *time.Timer
+	token string
+	host  *host
+	phone net.Conn
+	hello []byte
+	peer  string
+	timer *time.Timer // stops the dial timeout; set before the entry is registered
 }
 
 // registry maps host ids to control connections and dial tokens to waiting

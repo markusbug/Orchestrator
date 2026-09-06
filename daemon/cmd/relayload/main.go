@@ -25,7 +25,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"sort"
@@ -57,15 +56,12 @@ func main() {
 	localIPs := flag.String("local-ips", "", "comma-separated source IPs to rotate through (for >28k connections)")
 	flag.Parse()
 
-	u, err := url.Parse(*relay)
-	if err != nil || u.Host == "" {
+	ep, err := wire.ParseURL(*relay, true)
+	if err != nil {
 		log.Fatalf("bad relay url: %v", err)
 	}
-	domain := strings.ToLower(u.Hostname())
-	port := u.Port()
-	if port == "" {
-		port = "443"
-	}
+	domain := ep.Domain
+	port := fmt.Sprint(ep.Port)
 	var srcs []net.IP
 	for _, s := range strings.Split(*localIPs, ",") {
 		if ip := net.ParseIP(strings.TrimSpace(s)); ip != nil {
@@ -154,7 +150,7 @@ ramp:
 			go func() {
 				defer swg.Done()
 				t0 := time.Now()
-				if err := phone(ctx, dialer(), net.JoinHostPort(u.Hostname(), port), wire.Addr(h.id, domain), *streamBytes); err != nil {
+				if err := phone(ctx, dialer(), net.JoinHostPort(domain, port), wire.Addr(h.id, domain), *streamBytes); err != nil {
 					st.dialFail.Add(1)
 					if st.dialFail.Load() <= 5 {
 						log.Printf("phone stream failed: %v", err)

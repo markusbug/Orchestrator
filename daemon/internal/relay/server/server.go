@@ -196,7 +196,7 @@ func (s *Server) acceptLoop(ctx context.Context, ln net.Listener) error {
 			c.Close()
 			continue
 		}
-		ip := remoteIP(c)
+		ip := hostOf(c.RemoteAddr().String())
 		if !s.limits.allowConn(ip) {
 			s.conns.Add(-1)
 			s.m.rateLimited.Add(1)
@@ -211,10 +211,12 @@ func (s *Server) acceptLoop(ctx context.Context, ln net.Listener) error {
 	}
 }
 
-func remoteIP(c net.Conn) string {
-	host, _, err := net.SplitHostPort(c.RemoteAddr().String())
+// hostOf returns the host part of a "host:port" address, or the address
+// itself when it has no port.
+func hostOf(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return c.RemoteAddr().String()
+		return addr
 	}
 	return host
 }

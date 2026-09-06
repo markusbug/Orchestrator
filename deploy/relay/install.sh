@@ -137,7 +137,11 @@ if [[ ! -f "$ENV_FILE" ]]; then
 else
   [[ -n "$domain" ]] && log "note: $ENV_FILE exists; --domain ignored (edit the file to change it)"
 fi
-domain="$(grep -E '^RELAY_DOMAIN=' "$ENV_FILE" | cut -d= -f2-)"
+domain="$(grep -E '^RELAY_DOMAIN=' "$ENV_FILE" | cut -d= -f2- || true)"
+if [[ -z "$domain" ]]; then
+  echo "RELAY_DOMAIN is not set in $ENV_FILE; add it and rerun (the relay will not start without it)" >&2
+  exit 1
+fi
 
 # --- unit, sysctl, journald --------------------------------------------------
 install -m 0644 "$deploy_dir/relay.service" "$UNIT"

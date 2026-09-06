@@ -615,3 +615,40 @@ func TestLimitsBucketAndPeek(t *testing.T) {
 		t.Fatal("fdLimit floor")
 	}
 }
+
+func TestHostDropWithPendingDialClosesPhones(t *testing.T) {
+	// The host's control socket drops while phones wait for it to dial.
+	// Their timers must be stopped (never nil) and the phones closed.
+	r := startRelay(t, func(c *Config) { c.DialTimeout = 10 * time.Second })
+	key, id := newKey(t)
+	d, err := connectDaemon(t, r, key, id, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.onDial = nil
+	hello := rawHello(t, id+"."+testDomain)
+	var conns []net.Conn
+	for i := 0; i < 3; i++ {
+		c := phoneConn(t, r)
+		c.Write(hello)
+		conns = append(conns, c)
+	}
+	for i := 0; i < 3; i++ {
+		<-d.dials
+	}
+	d.ws.CloseNow()
+	waitFor(t, "offline", func() bool { return !r.srv.Online(id) })
+	for _, c := range conns {
+		c.SetReadDeadline(time.Now().Add(3 * time.Second))
+		if _, err := c.Read(make([]byte, 1)); err == nil {
+			t.Fatal("waiting phone not closed when its host dropped")
+		}
+	}
+	_, p := r.srv.reg.counts()
+	if p != 0 {
+		t.Fatalf("pending %d after drop", p)
+	}
+	if r.srv.m.dialTimeout.Value() != 0 {
+		t.Fatalf("dial timers fired after the host dropped: %d", r.srv.m.dialTimeout.Value())
+	}
+}

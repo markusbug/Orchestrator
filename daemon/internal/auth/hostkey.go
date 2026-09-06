@@ -14,10 +14,8 @@ import (
 // persisting one on first run. The key identifies this host to a relay; its
 // public key derives the host id phones connect to.
 func EnsureHostKey(path string) (ed25519.PrivateKey, error) {
-	if data, err := os.ReadFile(path); err == nil {
-		return parseHostKey(data)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+	if key, err := LoadHostKey(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return key, err
 	}
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -35,6 +33,16 @@ func EnsureHostKey(path string) (ed25519.PrivateKey, error) {
 		return nil, err
 	}
 	return priv, nil
+}
+
+// LoadHostKey reads the host key without creating anything. A missing file
+// is reported as os.ErrNotExist.
+func LoadHostKey(path string) (ed25519.PrivateKey, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return parseHostKey(data)
 }
 
 func parseHostKey(data []byte) (ed25519.PrivateKey, error) {

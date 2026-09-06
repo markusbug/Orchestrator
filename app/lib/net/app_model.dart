@@ -10,6 +10,7 @@ import '../services/host_store.dart';
 import '../services/keys.dart';
 import '../services/notifications.dart';
 import '../services/settings.dart';
+import 'dialer.dart';
 import 'host_client.dart';
 import 'host_connection.dart';
 
@@ -32,15 +33,7 @@ class PairException implements Exception {
 }
 
 /// Short human text for a connection error.
-String describeError(Object e) {
-  final s = e.toString();
-  if (e is TimeoutException) return 'timed out';
-  if (e is FingerprintMismatch) return 'certificate does not match';
-  final m = RegExp(r'OS Error: ([^,]+)').firstMatch(s);
-  if (m != null) return m.group(1)!.toLowerCase();
-  if (s.contains('SocketException')) return 'unreachable';
-  return s.replaceFirst(RegExp(r'^\w+(Exception|Error): '), '');
-}
+String describeError(Object e) => describeDialError(e);
 
 /// Root state: paired hosts and their connections. Reconnects everything on
 /// app foreground and on network changes.
@@ -131,56 +124,58 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
     if (p.fingerprint.isEmpty) throw ArgumentError('fingerprint missing');
     if (p.addrs.isEmpty) throw ArgumentError('no address to connect to');
     final key = await DeviceKey.generate();
-    final failures = <String>[];
-    for (final addr in p.addrs) {
-      HostClient c;
-      try {
-        c = await HostClient.connect(
-          ip: addr.ip,
-          port: addr.portOr(p.port),
-          fingerprint: p.fingerprint,
-          timeout: addr.isRelay
-              ? const Duration(seconds: 12)
-              : const Duration(seconds: 6),
-        );
-      } catch (e) {
-        failures.add('${addr.ip}: ${describeError(e)}');
-        continue;
-      }
-      try {
-        final hello = await c.hello(name: settings.deviceName);
-        final deviceId = await c.pair(
-          code: p.code,
-          key: key,
-          name: settings.deviceName,
-        );
-        final info = HostInfo.fromJson(await c.request('host.info'));
-        final hostname = info.host.isNotEmpty
-            ? info.host
-            : (p.host.isNotEmpty ? p.host : hello.host);
-        final rec = HostRecord(
-          id: deviceId,
-          name: hostname.isEmpty ? addr.ip : hostname,
-          hostname: hostname,
-          addrs: mergeAddrs(info.addrs, [addr, ...p.addrs]),
-          port: p.port,
-          fingerprint: p.fingerprint,
-          deviceId: deviceId,
-          createdAt: DateTime.now(),
-          lastGoodAddr: addr.ip,
-        );
-        await keys.save(rec.id, key);
-        hosts.add(rec);
-        await _persist();
-        await c.close();
-        _connect(rec);
-        notifyListeners();
-        return rec;
-      } finally {
-        await c.close();
-      }
+    final Dialed d;
+    try {
+      d = await dialFirst(
+        p.addrs,
+        hostPort: p.port,
+        fingerprint: p.fingerprint,
+      );
+    } on DialFailed catch (e) {
+      throw PairException(
+        p.port,
+        e.failures.entries
+            .map((f) => '${f.key.ip}: ${describeError(f.value)}')
+            .toList(),
+      );
+    } on FingerprintMismatch catch (e) {
+      throw PairException(p.port, [describeError(e)]);
     }
-    throw PairException(p.port, failures);
+    final c = d.client;
+    final addr = d.addr;
+    try {
+      final hello = await c.hello(name: settings.deviceName);
+      final deviceId = await c.pair(
+        code: p.code,
+        key: key,
+        name: settings.deviceName,
+      );
+      final info = HostInfo.fromJson(await c.request('host.info'));
+      final hostname = info.host.isNotEmpty
+          ? info.host
+          : (p.host.isNotEmpty ? p.host : hello.host);
+      final rec = HostRecord(
+        id: deviceId,
+        name: hostname.isEmpty ? addr.ip : hostname,
+        hostname: hostname,
+        addrs: mergeAddrs(info.addrs, [addr, ...p.addrs]),
+        // The daemon's own port wins over whatever was typed by hand.
+        port: info.port > 0 ? info.port : p.port,
+        fingerprint: p.fingerprint,
+        deviceId: deviceId,
+        createdAt: DateTime.now(),
+        lastGoodAddr: addr.isRelay ? null : addr.ip,
+      );
+      await keys.save(rec.id, key);
+      hosts.add(rec);
+      await _persist();
+      await c.close();
+      _connect(rec);
+      notifyListeners();
+      return rec;
+    } finally {
+      await c.close();
+    }
   }
 
   Future<void> renameHost(String id, String name) async {

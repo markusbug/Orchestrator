@@ -2,18 +2,18 @@
 package config
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/markusbug/Orchestrator/daemon/internal/relay/wire"
 )
 
 const maxSockPath = 96
@@ -44,58 +44,44 @@ type RelayConfig struct {
 // Active reports whether the daemon should connect to a relay.
 func (r RelayConfig) Active() bool { return r.Enabled && r.URL != "" }
 
-// Validate checks the relay URL. Plain http is only accepted when insecure
-// is set (development relays).
+// Validate checks the relay URL and, when set, that ca_file is readable
+// and holds at least one certificate. Plain http is only accepted when
+// insecure is set (development relays).
 func (r RelayConfig) Validate(insecure bool) error {
 	if r.URL == "" {
 		return nil
 	}
-	u, err := url.Parse(r.URL)
-	if err != nil {
-		return fmt.Errorf("relay url: %w", err)
+	if _, err := wire.ParseURL(r.URL, insecure); err != nil {
+		return err
 	}
-	switch u.Scheme {
-	case "https":
-	case "http":
-		if !insecure {
-			return errors.New("relay url must use https")
+	if r.CAFile != "" {
+		pem, err := os.ReadFile(r.CAFile)
+		if err != nil {
+			return fmt.Errorf("relay ca_file: %w", err)
 		}
-	default:
-		return fmt.Errorf("relay url: unsupported scheme %q", u.Scheme)
-	}
-	if u.Hostname() == "" {
-		return errors.New("relay url: missing host")
-	}
-	if u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
-		return errors.New("relay url must be just scheme and host")
+		if !strings.Contains(string(pem), "-----BEGIN CERTIFICATE-----") {
+			return fmt.Errorf("relay ca_file: no certificates in %s", r.CAFile)
+		}
 	}
 	return nil
 }
 
-// Domain returns the relay's host name without port.
-func (r RelayConfig) Domain() string {
-	u, err := url.Parse(r.URL)
-	if err != nil {
-		return ""
-	}
-	return strings.ToLower(u.Hostname())
+// Endpoint parses the relay URL leniently (http allowed) for display; use
+// Validate for acceptance.
+func (r RelayConfig) Endpoint() wire.Endpoint {
+	e, _ := wire.ParseURL(r.URL, true)
+	return e
 }
+
+// Domain returns the relay's host name without port.
+func (r RelayConfig) Domain() string { return r.Endpoint().Domain }
 
 // Port returns the relay port (443 unless the URL names one).
 func (r RelayConfig) Port() int {
-	u, err := url.Parse(r.URL)
-	if err != nil {
-		return 443
+	if p := r.Endpoint().Port; p != 0 {
+		return p
 	}
-	if p := u.Port(); p != "" {
-		if n, err := strconv.Atoi(p); err == nil {
-			return n
-		}
-	}
-	if u.Scheme == "http" {
-		return 80
-	}
-	return 443
+	return wire.DefaultPort
 }
 
 // Paths are derived locations that are not user-configurable.
@@ -213,44 +199,144 @@ func Load(p Paths) (Config, error) {
 	return cfg, nil
 }
 
-// Update rewrites config.toml after applying fn to its decoded document.
-// Keys fn does not touch are preserved, so user edits survive.
-func Update(p Paths, fn func(doc map[string]any)) error {
-	doc := map[string]any{}
+// SetRelay writes the [relay] section. An empty url keeps the current one.
+// The file is edited textually so comments, blank lines and key order in a
+// hand-maintained config survive.
+func SetRelay(p Paths, enabled bool, rawURL string) error {
+	keys := []kv{{"enabled", fmt.Sprint(enabled)}}
+	if rawURL != "" {
+		keys = append(keys, kv{"url", tomlString(rawURL)})
+	}
 	data, err := os.ReadFile(p.ConfigFile)
-	switch {
-	case err == nil:
-		if _, err := toml.Decode(string(data), &doc); err != nil {
-			return fmt.Errorf("config: %s: %w", p.ConfigFile, err)
-		}
-	case errors.Is(err, os.ErrNotExist):
-	default:
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	fn(doc)
-	var buf bytes.Buffer
-	if err := toml.NewEncoder(&buf).Encode(doc); err != nil {
-		return err
+	if len(data) > 0 {
+		// Refuse to touch a file we cannot parse rather than make it worse.
+		if _, err := toml.Decode(string(data), &map[string]any{}); err != nil {
+			return fmt.Errorf("config: %s: %w", p.ConfigFile, err)
+		}
+	}
+	out := setSectionKeys(string(data), "relay", keys)
+	var check Config
+	md, err := toml.Decode(out, &check)
+	if err != nil {
+		return fmt.Errorf("config: rewriting %s produced invalid TOML: %w", p.ConfigFile, err)
+	}
+	if check.Relay.Enabled != enabled || (rawURL != "" && check.Relay.URL != rawURL) || !md.IsDefined("relay", "enabled") {
+		return fmt.Errorf("config: %s: the relay keys are set somewhere this tool cannot edit (dotted keys?); edit the file by hand", p.ConfigFile)
 	}
 	if err := os.MkdirAll(filepath.Dir(p.ConfigFile), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(p.ConfigFile, buf.Bytes(), 0o600)
+	return os.WriteFile(p.ConfigFile, []byte(out), 0o600)
 }
 
-// SetRelay writes the [relay] section. An empty url keeps the current one.
-func SetRelay(p Paths, enabled bool, rawURL string) error {
-	return Update(p, func(doc map[string]any) {
-		sec, _ := doc["relay"].(map[string]any)
-		if sec == nil {
-			sec = map[string]any{}
+type kv struct{ key, value string }
+
+var (
+	sectionRe = regexp.MustCompile(`^\s*\[`)
+	keyRe     = regexp.MustCompile(`^\s*([A-Za-z0-9_-]+)\s*=`)
+)
+
+// setSectionKeys replaces or inserts "key = value" lines in [section] of a
+// TOML document, keeping everything else byte for byte. A missing section is
+// appended. Only bare keys directly under a plain [section] header are
+// handled; the caller verifies the result by decoding it.
+func setSectionKeys(doc, section string, keys []kv) string {
+	var lines []string
+	if doc != "" {
+		lines = strings.Split(doc, "\n")
+	}
+	// Trailing newline gives an empty last element; keep it separate.
+	trailing := ""
+	if strings.HasSuffix(doc, "\n") {
+		lines = lines[:len(lines)-1]
+		trailing = "\n"
+	}
+	header := "[" + section + "]"
+	start, end := -1, len(lines)
+	for i, l := range lines {
+		if start < 0 {
+			if strings.TrimSpace(strings.SplitN(l, "#", 2)[0]) == header {
+				start = i
+			}
+			continue
 		}
-		sec["enabled"] = enabled
-		if rawURL != "" {
-			sec["url"] = rawURL
+		if sectionRe.MatchString(l) {
+			end = i
+			break
 		}
-		doc["relay"] = sec
-	})
+	}
+	if start < 0 {
+		if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) != "" {
+			lines = append(lines, "")
+		}
+		lines = append(lines, header)
+		for _, k := range keys {
+			lines = append(lines, k.key+" = "+k.value)
+		}
+		return strings.Join(lines, "\n") + "\n"
+	}
+	pending := append([]kv(nil), keys...)
+	for i := start + 1; i < end; i++ {
+		m := keyRe.FindStringSubmatch(lines[i])
+		if m == nil {
+			continue
+		}
+		for j, k := range pending {
+			if m[1] == k.key {
+				lines[i] = k.key + " = " + k.value
+				pending = append(pending[:j], pending[j+1:]...)
+				break
+			}
+		}
+	}
+	if len(pending) > 0 {
+		// Insert after the last key line of the section (before trailing
+		// blanks and comments), or right after the header.
+		at := start + 1
+		for i := start + 1; i < end; i++ {
+			if keyRe.MatchString(lines[i]) {
+				at = i + 1
+			}
+		}
+		ins := make([]string, 0, len(pending))
+		for _, k := range pending {
+			ins = append(ins, k.key+" = "+k.value)
+		}
+		lines = append(lines[:at], append(ins, lines[at:]...)...)
+	}
+	out := strings.Join(lines, "\n") + trailing
+	if !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	return out
+}
+
+// tomlString quotes s as a TOML basic string.
+func tomlString(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"', '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if r < 0x20 {
+				fmt.Fprintf(&b, `\u%04X`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // ExpandHome replaces a leading ~ with home.

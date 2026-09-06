@@ -93,11 +93,13 @@ class HostClient {
     Duration timeout = const Duration(seconds: 6),
   }) async {
     final ctx = SecurityContext(withTrustedRoots: false);
+    var rejected = false;
     final http = HttpClient(context: ctx)
       ..connectionTimeout = timeout
       ..badCertificateCallback = (cert, host, p) {
-        final fp = certFingerprint(cert.der);
-        return fp == fingerprint;
+        final ok = certFingerprint(cert.der) == fingerprint;
+        if (!ok) rejected = true;
+        return ok;
       };
     final uri = Uri(scheme: 'wss', host: ip, port: port, path: '/ws');
     try {
@@ -111,8 +113,11 @@ class HostClient {
       c._listen();
       return c;
     } on HandshakeException catch (e) {
-      // Dart reports a rejected certificate as a handshake failure.
-      throw FingerprintMismatch(fingerprint, e.message);
+      // Dart reports a rejected certificate as a handshake failure, but so
+      // is a socket closed before the ServerHello (a relay whose host is
+      // offline or busy). Only the pin rejecting a certificate is a mismatch.
+      if (rejected) throw FingerprintMismatch(fingerprint, e.message);
+      rethrow;
     } finally {
       http.close(force: false);
     }

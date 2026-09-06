@@ -287,3 +287,54 @@ func TestBackoff(t *testing.T) {
 		t.Fatalf("unauthorized %v", d)
 	}
 }
+
+func TestHonoursRelayStreamCap(t *testing.T) {
+	// The relay allows one stream per host; the daemon's own cap is higher.
+	// The second phone must get a fast busy, not a 429 on the data socket.
+	r := startRelay(t, func(cfg *server.Config) { cfg.MaxStreamsPerHost = 1 })
+	key := genKey(t)
+	ln := vconn.NewListener("relay")
+	c, _ := newClient(t, r, key, ln, func(o *Options) { o.MaxStreams = 16 })
+	waitFor(t, "online", func() bool { return r.srv.Online(c.HostID()) })
+	if c.streamLimit() != 1 {
+		t.Fatalf("limit %d, want the relay's 1", c.streamLimit())
+	}
+	p1, _ := phone(t, r, c.HostID())
+	dc, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dc.Close()
+	_ = p1
+	p2, _ := phone(t, r, c.HostID())
+	p2.SetReadDeadline(time.Now().Add(3 * time.Second))
+	start := time.Now()
+	if _, err := p2.Read(make([]byte, 1)); err == nil {
+		t.Fatal("second phone not refused")
+	}
+	if time.Since(start) > 1500*time.Millisecond {
+		t.Fatal("busy did not short-circuit")
+	}
+	if st := c.Status(); st.Streams != 1 {
+		t.Fatalf("streams %d", st.Streams)
+	}
+}
+
+func TestStreamCountAfterFailedDataDial(t *testing.T) {
+	// A dial whose data socket the relay rejects must release its slot and
+	// never drive the count negative.
+	r := startRelay(t, nil)
+	key := genKey(t)
+	ln := vconn.NewListener("relay")
+	c, _ := newClient(t, r, key, ln, nil)
+	waitFor(t, "online", func() bool { return r.srv.Online(c.HostID()) })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tok, _ := wire.NewToken()
+	c.answerDial(ctx, nil, wire.Dial{T: wire.TDial, Token: tok, Peer: "127.0.0.1"})
+	waitFor(t, "release", func() bool { return c.Status().Streams == 0 })
+	time.Sleep(50 * time.Millisecond)
+	if st := c.Status(); st.Streams != 0 {
+		t.Fatalf("streams %d after failed dial", st.Streams)
+	}
+}

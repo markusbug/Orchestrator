@@ -110,7 +110,6 @@ func TestMessagesRoundTrip(t *testing.T) {
 		Dial{T: TDial, Token: "tok", Peer: "1.2.3.4"},
 		Busy{T: TBusy, Token: "tok"},
 		Error{T: TError, Code: "c", Message: "m"},
-		Push{T: TPush, Platform: "apns", Tokens: []string{"a"}},
 	}
 	for _, m := range msgs {
 		b := Marshal(m)
@@ -129,5 +128,39 @@ func TestMessagesRoundTrip(t *testing.T) {
 	}
 	if _, err := Type([]byte(`nope`)); err == nil {
 		t.Fatal("bad json accepted")
+	}
+}
+
+func TestParseURL(t *testing.T) {
+	for _, tc := range []struct {
+		raw      string
+		insecure bool
+		ok       bool
+		domain   string
+		port     int
+		ws       string
+	}{
+		{"https://relay.example", false, true, "relay.example", 443, "wss://relay.example"},
+		{"https://Relay.Example.:8443", false, true, "relay.example", 8443, "wss://Relay.Example.:8443"},
+		{"http://localhost:8080", true, true, "localhost", 8080, "ws://localhost:8080"},
+		{"http://localhost", true, true, "localhost", 80, "ws://localhost"},
+		{"http://relay.example", false, false, "", 0, ""},
+		{"ftp://relay.example", false, false, "", 0, ""},
+		{"https://relay.example/x", false, false, "", 0, ""},
+		{"https://relay.example:99999", false, false, "", 0, ""},
+		{"https://", false, false, "", 0, ""},
+		{"relay.example", false, false, "", 0, ""},
+	} {
+		e, err := ParseURL(tc.raw, tc.insecure)
+		if (err == nil) != tc.ok {
+			t.Errorf("ParseURL(%q, %v) err = %v", tc.raw, tc.insecure, err)
+			continue
+		}
+		if !tc.ok {
+			continue
+		}
+		if e.Domain != tc.domain || e.Port != tc.port || e.WSBase != tc.ws {
+			t.Errorf("ParseURL(%q) = %+v", tc.raw, e)
+		}
 	}
 }

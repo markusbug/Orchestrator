@@ -22,8 +22,10 @@ func (a Addr) String() string { return a.Name }
 type Listener struct {
 	ch   chan net.Conn
 	done chan struct{}
-	once sync.Once
 	addr Addr
+
+	mu     sync.Mutex // orders Close against a Push that just landed
+	closed bool
 }
 
 // NewListener creates a Listener with a small queue.
@@ -43,18 +45,27 @@ func (l *Listener) Accept() (net.Conn, error) {
 
 // Close stops the listener. Queued connections are closed. Idempotent.
 func (l *Listener) Close() error {
-	l.once.Do(func() {
-		close(l.done)
-		for {
-			select {
-			case c := <-l.ch:
-				c.Close()
-			default:
-				return
-			}
-		}
-	})
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return nil
+	}
+	l.closed = true
+	close(l.done)
+	l.drainLocked()
 	return nil
+}
+
+// drainLocked closes everything queued. Callers hold l.mu.
+func (l *Listener) drainLocked() {
+	for {
+		select {
+		case c := <-l.ch:
+			c.Close()
+		default:
+			return
+		}
+	}
 }
 
 // Addr returns the listener's name.
@@ -62,21 +73,37 @@ func (l *Listener) Addr() net.Addr { return l.addr }
 
 // Push queues c for Accept. It blocks while the queue is full and returns
 // net.ErrClosed after Close or ctx.Err() when ctx ends. On error the caller
-// still owns c.
+// still owns c. A push that lands just as the listener closes is treated
+// like any queued connection: it is closed and Push returns nil.
 func (l *Listener) Push(ctx context.Context, c net.Conn) error {
-	select {
-	case <-l.done:
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
 		return net.ErrClosed
-	default:
 	}
 	select {
 	case l.ch <- c:
+		l.mu.Unlock()
 		return nil
+	default:
+	}
+	l.mu.Unlock()
+	// Queue full: wait without the lock so Close is never blocked.
+	select {
+	case l.ch <- c:
 	case <-l.done:
 		return net.ErrClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	// The send raced Close: if Close already drained, drain again so c does
+	// not sit in the queue for good (and leak whatever its close releases).
+	l.mu.Lock()
+	if l.closed {
+		l.drainLocked()
+	}
+	l.mu.Unlock()
+	return nil
 }
 
 // Conn wraps a net.Conn and overrides its addresses. It is what the daemon's
@@ -100,9 +127,6 @@ func (c *Conn) RemoteAddr() net.Addr { return c.remote }
 
 // LocalAddr returns the overridden local address.
 func (c *Conn) LocalAddr() net.Addr { return c.local }
-
-// NetConn returns the wrapped connection.
-func (c *Conn) NetConn() net.Conn { return c.Conn }
 
 // Close closes the wrapped connection and runs onClose once.
 func (c *Conn) Close() error {

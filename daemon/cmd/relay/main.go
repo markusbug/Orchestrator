@@ -38,7 +38,7 @@ func main() {
 	listen := fs.String("listen", env("RELAY_LISTEN", ":443"), "TCP listen address")
 	acmeEmail := fs.String("acme-email", env("RELAY_ACME_EMAIL", ""), "contact email for Let's Encrypt (optional)")
 	acmeDir := fs.String("acme-directory", env("RELAY_ACME_DIRECTORY", ""), "ACME directory URL (default Let's Encrypt production)")
-	cacheDir := fs.String("cache-dir", env("RELAY_CACHE_DIR", env("STATE_DIRECTORY", "/var/lib/relay")), "certificate cache directory")
+	cacheDir := fs.String("cache-dir", env("STATE_DIRECTORY", "/var/lib/relay"), "certificate cache directory (the systemd unit passes its state directory)")
 	metrics := fs.String("metrics", env("RELAY_METRICS_LISTEN", "127.0.0.1:9100"), "loopback address for /debug/vars, /debug/pprof and /healthz (empty disables)")
 	dev := fs.Bool("dev", envBool("RELAY_DEV"), "self-signed apex certificate, no ACME")
 	devCertOut := fs.String("dev-cert", env("RELAY_DEV_CERT", ""), "with -dev: write the apex certificate PEM here so a local daemon can trust it (relay ca_file)")

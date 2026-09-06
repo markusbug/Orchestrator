@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -15,14 +14,6 @@ import (
 
 const unresponsiveDials = 3
 
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
-
 // handleControl authenticates a daemon and runs its control loop.
 func (s *Server) handleControl(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -30,7 +21,7 @@ func (s *Server) handleControl(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad host id", http.StatusBadRequest)
 		return
 	}
-	ip := clientIP(r)
+	ip := hostOf(r.RemoteAddr)
 	if !s.limits.auth.Allow(ip) {
 		http.Error(w, "too many failed attempts", http.StatusTooManyRequests)
 		return
@@ -56,7 +47,7 @@ func (s *Server) handleControl(w http.ResponseWriter, r *http.Request) {
 		ws.Close(websocket.StatusInternalError, "nonce")
 		return
 	}
-	if err := writeJSON(ctx, ws, wire.Challenge{T: wire.TChallenge, Nonce: b64(nonce), Relay: s.cfg.Domain}); err != nil {
+	if err := wire.WriteJSON(ctx, ws, wire.Challenge{T: wire.TChallenge, Nonce: b64(nonce), Relay: s.cfg.Domain}); err != nil {
 		ws.CloseNow()
 		return
 	}
@@ -83,7 +74,7 @@ func (s *Server) handleControl(w http.ResponseWriter, r *http.Request) {
 	s.m.authOK.Add(1)
 
 	h := &host{
-		id: id, ws: ws, peer: ip, version: a.Version, since: s.now(), seen: seen,
+		id: id, ws: ws, peer: ip, since: s.now(), seen: seen,
 		sendq: make(chan []byte, 64), done: make(chan struct{}),
 	}
 	if old := s.reg.put(h); old != nil {
@@ -91,7 +82,7 @@ func (s *Server) handleControl(w http.ResponseWriter, r *http.Request) {
 		s.log.Info("host replaced", "host", id, "old_peer", old.peer, "new_peer", ip)
 		old.close(wire.CloseReplaced, "another daemon authenticated for this host")
 	}
-	if err := writeJSON(ctx, ws, wire.OK{T: wire.TOK, PingIntervalS: int(s.cfg.PingInterval.Seconds()), MaxStreams: s.cfg.MaxStreamsPerHost}); err != nil {
+	if err := wire.WriteJSON(ctx, ws, wire.OK{T: wire.TOK, PingIntervalS: int(s.cfg.PingInterval.Seconds()), MaxStreams: s.cfg.MaxStreamsPerHost}); err != nil {
 		s.dropHost(h)
 		ws.CloseNow()
 		return

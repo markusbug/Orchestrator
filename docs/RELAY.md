@@ -33,7 +33,7 @@ Each daemon has an Ed25519 host key (`<config dir>/host_key.pem`). Its host id i
 
 ### Two kinds of connection from the daemon
 
-1. **Control socket.** One long-lived outbound WSS per host to `GET /v1/connect/host/{id}`. The relay sends `challenge{nonce, relay}`, the daemon answers `auth{pubkey, sig, version}`, the relay replies `ok{ping_interval_s, max_streams}`. The daemon then pings every 60 s; the relay closes hosts silent for 150 s. A daemon that authenticates for an id already online replaces the old socket (close code 4409); an unauthenticated connection never evicts anyone. The daemon may also send `push{platform, tokens}` (reserved, see below).
+1. **Control socket.** One long-lived outbound WSS per host to `GET /v1/connect/host/{id}`. The relay sends `challenge{nonce, relay}`, the daemon answers `auth{pubkey, sig, version}`, the relay replies `ok{ping_interval_s, max_streams}`. The daemon then pings every 60 s; the relay closes hosts silent for 150 s. A daemon that authenticates for an id already online replaces the old socket (close code 4409); an unauthenticated connection never evicts anyone. The message type `push` is reserved for the daemon (see below); its body is not defined yet and the daemon honours `max_streams` as an upper bound on its own stream cap.
 2. **Data socket.** When a phone connects for host X the relay records the ClientHello (5 s deadline, 16 KiB cap), creates a single-use 256-bit token, sends `dial{token, peer}` on X's control socket, and waits 10 s. The daemon dials `GET /v1/connect/data/{token}`; the relay replays the recorded ClientHello and then copies bytes both ways with 32 KiB buffers until either side closes or the stream idles for 10 min. The daemon answers `busy{token}` when at its stream cap so the phone fails fast. Three unanswered dials in a row close the control socket (4408).
 
 ### Why one dial per phone instead of multiplexing
@@ -77,7 +77,7 @@ Host ids live in SNI subdomains, so a second node is a second domain: hosts told
 
 ## Push notifications (reserved, not built)
 
-The relay is the natural place for APNs and FCM once an Apple Developer account exists. The phone will hand its push token to the *daemon* over the end-to-end channel; the daemon forwards tokens in a content-free `push` message and the relay sends a wake-only notification. The app then reconnects and fetches real state. Session names, folders, and output never reach Apple or Google, and the relay still keeps no state. Today the relay accepts `push` and drops it.
+The relay is the natural place for APNs and FCM once an Apple Developer account exists. The phone will hand its push token to the *daemon* over the end-to-end channel; the daemon forwards tokens in a content-free `push` message and the relay sends a wake-only notification. The app then reconnects and fetches real state. Session names, folders, and output never reach Apple or Google, and the relay still keeps no state. Today the relay accepts a `push` frame and drops it; no body is defined.
 
 ## Public API (apex, HTTPS)
 

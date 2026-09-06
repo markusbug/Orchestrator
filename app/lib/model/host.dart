@@ -15,6 +15,14 @@ class HostAddr {
   /// Port to dial, falling back to the host's default.
   int portOr(int hostPort) => port ?? hostPort;
 
+  /// TLS connect timeout. The relay adds a round trip to the daemon before
+  /// TLS starts, so it gets longer.
+  Duration get dialTimeout =>
+      isRelay ? const Duration(seconds: 12) : const Duration(seconds: 6);
+
+  /// Short label for lists and status lines.
+  String label(int hostPort) => isRelay ? 'relay' : '$ip:${portOr(hostPort)}';
+
   factory HostAddr.fromJson(Map<String, dynamic> j) => HostAddr(
     j['ip'] as String,
     (j['kind'] as String?) ?? 'lan',
@@ -143,15 +151,16 @@ class HostRecord {
     if (lastGoodAddr != null) 'last_good_addr': lastGoodAddr,
   };
 
-  /// Addresses in the order to try: last known good, LAN, Tailscale, then
-  /// anything else, with the relay last. The relay always works but is the
-  /// slowest path, so direct addresses get their chance first.
+  /// Addresses in the order to try: last known good direct address, LAN,
+  /// Tailscale, then anything else, with the relay last. The relay always
+  /// works but is the slowest path and crosses a third party, so direct
+  /// addresses get their chance first even after a relay session.
   List<HostAddr> get orderedAddrs {
     final out = <HostAddr>[];
     final good = lastGoodAddr;
     if (good != null) {
       for (final a in addrs) {
-        if (a.ip == good) out.add(a);
+        if (a.ip == good && !a.isRelay) out.add(a);
       }
     }
     for (final a in addrs) {

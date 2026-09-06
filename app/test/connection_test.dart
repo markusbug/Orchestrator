@@ -298,10 +298,64 @@ void main() {
       final conn = HostConnection(rec, keys: keys, deviceName: () => 'phone');
       conn.start();
       await waitFor(() => conn.state == ConnState.connected);
-      expect(conn.connectedVia, 'relay');
-      expect(conn.host.lastGoodAddr, 'localhost');
+      expect(conn.connectedVia, 'localhost');
+      expect(conn.viaLabel, 'relay');
+      // A relay session is never remembered as the preferred address.
+      expect(conn.host.lastGoodAddr, isNull);
       // host.info re-advertises the relay address, so it survives the merge.
       expect(conn.host.relayAddr?.port, daemon.port);
+      // The daemon's own port replaces the dead one the record carried.
+      expect(conn.host.port, daemon.port);
+      conn.dispose();
+    });
+
+    test(
+      'a relay that closes before TLS is not a certificate change',
+      () async {
+        // A relay whose host is offline closes the socket without a byte of
+        // TLS. That must read as unreachable (retry), not as a changed pin.
+        final closer = await ServerSocket.bind('127.0.0.1', 0);
+        closer.listen((s) => s.destroy());
+        addTearDown(closer.close);
+        final rec = HostRecord(
+          id: 'h1',
+          name: 'x',
+          hostname: 'x',
+          addrs: [HostAddr('127.0.0.1', 'relay', port: closer.port)],
+          port: 1,
+          fingerprint: daemon.fingerprint,
+          deviceId: 'dev-1',
+          createdAt: DateTime.now(),
+        );
+        final conn = HostConnection(rec, keys: keys, deviceName: () => 'phone');
+        conn.start();
+        await waitFor(() => conn.state == ConnState.retrying);
+        expect(conn.error, isNot(contains('certificate')));
+        conn.dispose();
+      },
+    );
+
+    test('a dead LAN entry does not delay a live one', () async {
+      final rec = HostRecord(
+        id: 'h1',
+        name: 'fake',
+        hostname: 'fake',
+        addrs: [
+          // Black-hole address: connect hangs until the 6 s timeout.
+          const HostAddr('10.255.255.1', 'lan'),
+          const HostAddr('127.0.0.1', 'lan'),
+        ],
+        port: daemon.port,
+        fingerprint: daemon.fingerprint,
+        deviceId: 'dev-1',
+        createdAt: DateTime.now(),
+      );
+      final conn = HostConnection(rec, keys: keys, deviceName: () => 'phone');
+      final start = DateTime.now();
+      conn.start();
+      await waitFor(() => conn.isOnline);
+      expect(DateTime.now().difference(start).inSeconds, lessThan(5));
+      expect(conn.connectedVia, '127.0.0.1');
       conn.dispose();
     });
 

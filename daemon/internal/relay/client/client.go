@@ -15,10 +15,8 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -36,7 +34,7 @@ type Options struct {
 	Listener   *vconn.Listener    // receives phone connections
 	TLS        *tls.Config        // optional; RootCAs for a private CA or dev relay
 	Insecure   bool               // allow http:// relays (development only)
-	MaxStreams int                // concurrent phone streams (default 16)
+	MaxStreams int                // concurrent phone streams (default 16; the relay may lower it)
 	Log        *slog.Logger
 }
 
@@ -64,11 +62,10 @@ type Client struct {
 	log    *slog.Logger
 	rnd    *rand.Rand
 
-	sem     chan struct{}
-	streams atomic.Int64
-
-	mu sync.Mutex
-	st Status
+	mu      sync.Mutex
+	st      Status
+	streams int // phone streams open or being dialled
+	limit   int // min(o.MaxStreams, relay's max_streams)
 }
 
 // New validates o and derives the host id. It does not connect.
@@ -79,25 +76,9 @@ func New(o Options) (*Client, error) {
 	if o.Listener == nil {
 		return nil, errors.New("relay client: listener missing")
 	}
-	u, err := url.Parse(o.URL)
-	if err != nil || u.Host == "" {
-		return nil, fmt.Errorf("relay client: bad url %q", o.URL)
-	}
-	var wsScheme string
-	port := 443
-	switch u.Scheme {
-	case "https":
-		wsScheme = "wss"
-	case "http":
-		if !o.Insecure {
-			return nil, errors.New("relay client: refusing plain http relay")
-		}
-		wsScheme, port = "ws", 80
-	default:
-		return nil, fmt.Errorf("relay client: unsupported scheme %q", u.Scheme)
-	}
-	if p := u.Port(); p != "" {
-		fmt.Sscanf(p, "%d", &port)
+	ep, err := wire.ParseURL(o.URL, o.Insecure)
+	if err != nil {
+		return nil, fmt.Errorf("relay client: %w", err)
 	}
 	if o.MaxStreams <= 0 {
 		o.MaxStreams = wire.DefaultMaxStreams
@@ -107,10 +88,10 @@ func New(o Options) (*Client, error) {
 	}
 	pub := o.HostKey.Public().(ed25519.PublicKey)
 	c := &Client{
-		o: o, hostID: wire.HostID(pub), domain: strings.ToLower(u.Hostname()), port: port,
-		wsBase: wsScheme + "://" + u.Host, log: o.Log,
-		rnd: rand.New(rand.NewSource(time.Now().UnixNano())),
-		sem: make(chan struct{}, o.MaxStreams),
+		o: o, hostID: wire.HostID(pub), domain: ep.Domain, port: ep.Port,
+		wsBase: ep.WSBase, log: o.Log,
+		rnd:   rand.New(rand.NewSource(time.Now().UnixNano())),
+		limit: o.MaxStreams,
 	}
 	c.http = &http.Client{Transport: &http.Transport{
 		TLSClientConfig:     o.TLS,
@@ -118,7 +99,7 @@ func New(o Options) (*Client, error) {
 		TLSHandshakeTimeout: 15 * time.Second,
 		Proxy:               http.ProxyFromEnvironment,
 	}}
-	c.st = Status{URL: o.URL, HostID: c.hostID, Addr: wire.Addr(c.hostID, c.domain), Port: port}
+	c.st = Status{URL: o.URL, HostID: c.hostID, Addr: wire.Addr(c.hostID, c.domain), Port: ep.Port}
 	return c, nil
 }
 
@@ -137,13 +118,37 @@ func (c *Client) Status() Status {
 	defer c.mu.Unlock()
 	st := c.st
 	st.Addr = c.Addr()
-	st.Streams = int(c.streams.Load())
+	st.Streams = c.streams
 	return st
 }
 
-func (c *Client) setConnected(ping int) {
+// setConnected records a fresh control connection. maxStreams is the relay's
+// per-host cap (0 = unknown); admission uses the lower of it and ours so the
+// relay never has to answer a data dial with 429.
+func (c *Client) setConnected(ping, maxStreams int) {
 	c.mu.Lock()
 	c.st.Connected, c.st.Since, c.st.LastError, c.st.PingInterval = true, time.Now(), "", ping
+	c.limit = c.o.MaxStreams
+	if maxStreams > 0 && maxStreams < c.limit {
+		c.limit = maxStreams
+	}
+	c.mu.Unlock()
+}
+
+// acquireStream reserves a stream slot; false means the cap is reached.
+func (c *Client) acquireStream() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.streams >= c.limit {
+		return false
+	}
+	c.streams++
+	return true
+}
+
+func (c *Client) releaseStream() {
+	c.mu.Lock()
+	c.streams--
 	c.mu.Unlock()
 }
 
@@ -224,7 +229,7 @@ func (c *Client) runOnce(ctx context.Context) (connected bool, code websocket.St
 	sig := ed25519.Sign(c.o.HostKey, wire.ChallengeBytes(nonce, c.hostID, ch.Relay))
 	pub := c.o.HostKey.Public().(ed25519.PublicKey)
 	a := wire.Auth{T: wire.TAuth, PubKey: base64.StdEncoding.EncodeToString(pub), Sig: base64.StdEncoding.EncodeToString(sig), Version: c.o.Version}
-	if err := c.write(ctx, ws, a); err != nil {
+	if err := wire.WriteJSON(ctx, ws, a); err != nil {
 		return false, websocket.CloseStatus(err), err
 	}
 	rctx, cancel = context.WithTimeout(ctx, 10*time.Second)
@@ -245,8 +250,8 @@ func (c *Client) runOnce(ctx context.Context) (connected bool, code websocket.St
 	if ping < 10*time.Second || ping > 10*time.Minute {
 		ping = wire.DefaultPingInterval
 	}
-	c.setConnected(int(ping.Seconds()))
-	c.log.Info("relay connected", "url", c.o.URL, "addr", c.Addr(), "port", c.port)
+	c.setConnected(int(ping.Seconds()), ok.MaxStreams)
+	c.log.Info("relay connected", "url", c.o.URL, "addr", c.Addr(), "port", c.port, "max_streams", c.streamLimit())
 
 	cctx, stop := context.WithCancel(ctx)
 	defer stop()
@@ -295,41 +300,44 @@ func (c *Client) runOnce(ctx context.Context) (connected bool, code websocket.St
 	}
 }
 
-func (c *Client) write(ctx context.Context, ws *websocket.Conn, v any) error {
-	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	return ws.Write(wctx, websocket.MessageText, wire.Marshal(v))
+func (c *Client) streamLimit() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.limit
 }
 
 // answerDial opens a data socket for a waiting phone, or replies busy when
 // the stream cap is reached.
 func (c *Client) answerDial(lifetime context.Context, ctl *websocket.Conn, d wire.Dial) {
-	select {
-	case c.sem <- struct{}{}:
-	default:
-		c.log.Warn("relay: refusing phone, stream cap reached", "peer", d.Peer, "max", c.o.MaxStreams)
-		_ = c.write(lifetime, ctl, wire.Busy{T: wire.TBusy, Token: d.Token})
+	if !c.acquireStream() {
+		c.log.Warn("relay: refusing phone, stream cap reached", "peer", d.Peer, "max", c.streamLimit())
+		_ = wire.WriteJSON(lifetime, ctl, wire.Busy{T: wire.TBusy, Token: d.Token})
 		return
 	}
 	go func() {
-		release := func() { <-c.sem; c.streams.Add(-1) }
 		dctx, cancel := context.WithTimeout(lifetime, 10*time.Second)
-		ws, _, err := websocket.Dial(dctx, c.wsBase+wire.DataPath+d.Token, &websocket.DialOptions{
+		ws, resp, err := websocket.Dial(dctx, c.wsBase+wire.DataPath+d.Token, &websocket.DialOptions{
 			HTTPClient: c.http, CompressionMode: websocket.CompressionDisabled,
 		})
 		cancel()
 		if err != nil {
-			c.log.Debug("relay data dial failed", "err", err)
-			release()
+			if resp != nil {
+				c.log.Warn("relay refused data socket", "status", resp.Status, "peer", d.Peer)
+			} else {
+				c.log.Debug("relay data dial failed", "err", err)
+			}
+			c.releaseStream()
 			return
 		}
-		c.streams.Add(1)
+		// The relay reports the phone's IP as it saw it. Behind a TCP proxy
+		// without PROXY protocol that is the proxy's address, so the relay
+		// must be the edge (deploy/relay does this).
 		peer := net.ParseIP(d.Peer)
 		if peer == nil {
 			peer = net.IPv4zero
 		}
 		nc := vconn.FromWebSocket(lifetime, ws)
-		vc := vconn.Wrap(nc, &net.TCPAddr{IP: peer}, vconn.Addr{Name: "relay"}, release)
+		vc := vconn.Wrap(nc, &net.TCPAddr{IP: peer}, vconn.Addr{Name: "relay"}, c.releaseStream)
 		pctx, cancel := context.WithTimeout(lifetime, 10*time.Second)
 		defer cancel()
 		if err := c.o.Listener.Push(pctx, vc); err != nil {

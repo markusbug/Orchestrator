@@ -25,12 +25,9 @@ func (s *Server) dial(h *host, phone net.Conn, hello []byte, peer string) {
 		phone.Close()
 		return
 	}
-	p := &pending{token: tok, host: h, phone: phone, hello: hello, peer: peer, created: s.now()}
-	if !s.reg.addPending(p, s.cfg.MaxPendingPerHost) {
-		s.m.pendingReject.Add(1)
-		phone.Close()
-		return
-	}
+	p := &pending{token: tok, host: h, phone: phone, hello: hello, peer: peer}
+	// The timer exists before the entry is published: dropHost and
+	// drainPending stop it on every entry they find.
 	p.timer = time.AfterFunc(s.cfg.DialTimeout, func() {
 		if s.reg.claim(tok) == nil {
 			return
@@ -43,6 +40,12 @@ func (s *Server) dial(h *host, phone net.Conn, hello []byte, peer string) {
 			h.close(wire.CloseUnresponsive, "dials unanswered")
 		}
 	})
+	if !s.reg.addPending(p, s.cfg.MaxPendingPerHost) {
+		p.timer.Stop()
+		s.m.pendingReject.Add(1)
+		phone.Close()
+		return
+	}
 	if !h.trySend(wire.Marshal(wire.Dial{T: wire.TDial, Token: tok, Peer: peer})) {
 		if s.reg.claim(tok) != nil {
 			p.timer.Stop()
@@ -159,30 +162,29 @@ func pipe(parent context.Context, tcp net.Conn, ws *websocket.Conn, prefix []byt
 		tcp.Close()
 		cancel()
 	}()
-	go func() { // idle watchdog
-		tick := idle / 4
-		if tick > time.Minute {
-			tick = time.Minute
+	// Idle watchdog: one timer per stream that re-arms itself, no goroutine
+	// parked per stream.
+	tick := idle / 4
+	if tick > time.Minute {
+		tick = time.Minute
+	}
+	if tick <= 0 {
+		tick = time.Second
+	}
+	var watchdog *time.Timer
+	watchdog = time.AfterFunc(tick, func() {
+		if ctx.Err() != nil {
+			return
 		}
-		if tick <= 0 {
-			tick = time.Second
+		if time.Since(time.Unix(0, last.Load())) > idle {
+			tcp.Close()
+			ws.CloseNow()
+			cancel()
+			return
 		}
-		t := time.NewTicker(tick)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if time.Since(time.Unix(0, last.Load())) > idle {
-					tcp.Close()
-					ws.CloseNow()
-					cancel()
-					return
-				}
-			}
-		}
-	}()
+		watchdog.Reset(tick)
+	})
 	wg.Wait()
+	watchdog.Stop()
 	return upN.Load(), downN.Load()
 }

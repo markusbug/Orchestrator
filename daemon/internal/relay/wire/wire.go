@@ -10,6 +10,7 @@
 package wire
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -17,6 +18,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,7 +64,7 @@ const (
 	TDial      = "dial"      // relay -> daemon, a phone is waiting
 	TBusy      = "busy"      // daemon -> relay, cannot take the dial
 	TError     = "error"     // relay -> daemon, followed by close
-	TPush      = "push"      // daemon -> relay, reserved for push notifications
+	TPush      = "push"      // daemon -> relay, reserved for push notifications (no body defined yet)
 )
 
 // Challenge is the relay's first message.
@@ -103,14 +107,6 @@ type Error struct {
 	T       string `json:"t"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
-}
-
-// Push is reserved: the daemon forwards phone push tokens so the relay can
-// send a content-free wake-up. The relay currently logs and drops it.
-type Push struct {
-	T        string   `json:"t"`
-	Platform string   `json:"platform"`
-	Tokens   []string `json:"tokens"`
 }
 
 // Type returns the "t" field of a control message.
@@ -187,6 +183,60 @@ func HostIDFromSNI(sni, domain string) (string, bool) {
 		return "", false
 	}
 	return label, true
+}
+
+// Endpoint is a relay as named by its URL: the apex domain phones and daemons
+// use, the port phones connect to, and the WebSocket base for daemons.
+type Endpoint struct {
+	Domain string // lowercase, no trailing dot
+	Port   int    // DefaultPort unless the URL names one (80 for insecure http)
+	WSBase string // "wss://host[:port]" (or "ws://" when insecure)
+}
+
+// ParseURL parses a relay URL of the form https://relay.example[:port].
+// Plain http is accepted only with insecure set (development relays). The
+// URL must be just a scheme and host.
+func ParseURL(raw string, insecure bool) (Endpoint, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return Endpoint{}, fmt.Errorf("relay url: %w", err)
+	}
+	e := Endpoint{Port: DefaultPort}
+	var ws string
+	switch u.Scheme {
+	case "https":
+		ws = "wss"
+	case "http":
+		if !insecure {
+			return Endpoint{}, errors.New("relay url must use https")
+		}
+		ws, e.Port = "ws", 80
+	default:
+		return Endpoint{}, fmt.Errorf("relay url: unsupported scheme %q", u.Scheme)
+	}
+	if u.Hostname() == "" {
+		return Endpoint{}, errors.New("relay url: missing host")
+	}
+	if u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return Endpoint{}, errors.New("relay url must be just scheme and host")
+	}
+	if p := u.Port(); p != "" {
+		n, err := strconv.Atoi(p)
+		if err != nil || n <= 0 || n > 65535 {
+			return Endpoint{}, fmt.Errorf("relay url: bad port %q", p)
+		}
+		e.Port = n
+	}
+	e.Domain = strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	e.WSBase = ws + "://" + u.Host
+	return e, nil
+}
+
+// WriteJSON sends v as a text frame, giving up after ten seconds.
+func WriteJSON(ctx context.Context, ws *websocket.Conn, v any) error {
+	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return ws.Write(wctx, websocket.MessageText, Marshal(v))
 }
 
 // Marshal encodes a control message.

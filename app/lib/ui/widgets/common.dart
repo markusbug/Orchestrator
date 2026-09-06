@@ -35,7 +35,7 @@ Color connColor(BuildContext context, ConnState s) {
 
 String connLabel(HostConnection c) => switch (c.state) {
   ConnState.connected =>
-    c.connectedVia == null ? 'online' : 'online via ${c.connectedVia}',
+    c.viaLabel == null ? 'online' : 'online via ${c.viaLabel}',
   ConnState.connecting => 'connecting…',
   ConnState.retrying =>
     c.error == null ? 'reconnecting…' : '${c.error}, retrying…',

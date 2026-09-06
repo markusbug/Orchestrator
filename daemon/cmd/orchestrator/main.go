@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -173,35 +174,39 @@ func runServe(args []string) error {
 	}
 	defer c.Close()
 
+	log.Info("orchestrator starting", "version", core.Version, "port", cfg.Port, "bind", cfg.Bind, "dir", p.Dir, "debug", dbg)
+	log.Info("tls fingerprint", "fp", c.Identity.Fingerprint)
+	if dbg {
+		log.Warn("debug mode: loopback connections are auto-authenticated", "url", fmt.Sprintf("https://localhost:%d/_debug/", cfg.Port))
+	}
+	// The relay is an extra path, never a prerequisite: a broken relay
+	// setup is logged and the daemon still serves LAN and Tailscale.
+	var extra []net.Listener
+	if !cfg.Relay.Active() {
+		log.Info("relay off; phones can only reach this machine directly", "host_id", c.HostID)
+	} else if err := cfg.Relay.Validate(dbg); err != nil {
+		c.Cfg.Relay.Enabled = false
+		log.Error("relay disabled: bad configuration (fix with `orchestrator relay set <url>` or edit config.toml)", "err", err)
+	} else if rc, ln, err := startRelay(ctx, c, dbg, log); err != nil {
+		c.Cfg.Relay.Enabled = false
+		log.Error("relay disabled: cannot start", "err", err)
+	} else {
+		c.Relay = rc
+		extra = append(extra, ln)
+		log.Info("relay", "url", cfg.Relay.URL, "addr", rc.Addr(), "port", rc.Port())
+	}
+	for _, a := range c.Addrs() {
+		log.Info("address", "ip", a.IP, "port", a.Port, "kind", a.Kind)
+	}
+
+	// The admin socket answers `orchestrator status` with c.Relay, so it
+	// opens only once the relay decision is made.
 	adm := &admin.Server{Core: c}
 	if err := adm.Listen(p.AdminSocket); err != nil {
 		return fmt.Errorf("admin socket: %w", err)
 	}
 	defer adm.Close()
 
-	log.Info("orchestrator starting", "version", core.Version, "port", cfg.Port, "bind", cfg.Bind, "dir", p.Dir, "debug", dbg)
-	log.Info("tls fingerprint", "fp", c.Identity.Fingerprint)
-	for _, a := range c.Addrs() {
-		log.Info("address", "ip", a.IP, "kind", a.Kind)
-	}
-	if dbg {
-		log.Warn("debug mode: loopback connections are auto-authenticated", "url", fmt.Sprintf("https://localhost:%d/_debug/", cfg.Port))
-	}
-	var extra []net.Listener
-	if cfg.Relay.Active() {
-		if err := cfg.Relay.Validate(dbg); err != nil {
-			return err
-		}
-		rc, ln, err := startRelay(ctx, c, dbg, log)
-		if err != nil {
-			return err
-		}
-		c.Relay = rc
-		extra = append(extra, ln)
-		log.Info("relay", "url", cfg.Relay.URL, "addr", rc.Addr(), "port", rc.Port())
-	} else {
-		log.Info("relay off; phones can only reach this machine directly", "host_id", c.HostID)
-	}
 	srv := &api.Server{Core: c, Log: log}
 	if err := srv.ListenAndServe(ctx, extra...); err != nil {
 		return err
@@ -275,7 +280,7 @@ func runStatus(args []string) error {
 	fmt.Printf("fingerprint: %s\n", st.Fingerprint)
 	fmt.Printf("config:      %s\n", st.ConfigDir)
 	for _, a := range st.Addrs {
-		fmt.Printf("address:     %s (%s)\n", a.IP, a.Kind)
+		fmt.Printf("address:     %s (%s)\n", formatAddr(a, st.Port), a.Kind)
 	}
 	fmt.Printf("sessions:    %d\n", st.Sessions)
 	fmt.Printf("devices:     %d\n", st.Devices)
@@ -303,21 +308,30 @@ func runPair(args []string) error {
 	fmt.Println()
 	qrterminal.GenerateWithConfig(uri, qrterminal.Config{Level: qrterminal.L, Writer: os.Stdout, HalfBlocks: true, BlackChar: qrterminal.BLACK_BLACK, WhiteChar: qrterminal.WHITE_WHITE, BlackWhiteChar: qrterminal.BLACK_WHITE, WhiteBlackChar: qrterminal.WHITE_BLACK, QuietZone: 2})
 	fmt.Println()
-	fmt.Printf("Scan with the Orchestrator app, or enter manually:\n")
+	fmt.Printf("Scan with the Orchestrator app, or enter one address manually (address:port):\n")
 	fmt.Printf("  code:        %s   (expires %s)\n", p.Code, time.Unix(p.ExpiresAt, 0).Format(time.Kitchen))
-	fmt.Printf("  port:        %d\n", p.Port)
 	fmt.Printf("  fingerprint: %s\n", p.FP)
 	if len(p.Addrs) == 0 {
 		fmt.Println("  address:     (no network address found)")
 	}
 	for _, a := range p.Addrs {
-		fmt.Printf("  address:     %s (%s)\n", a.IP, a.Kind)
+		fmt.Printf("  address:     %s (%s)\n", formatAddr(a, p.Port), a.Kind)
 	}
 	fmt.Println()
-	if hasRelay(p.Addrs) {
-		fmt.Println("The phone can be anywhere: it reaches this machine through the relay, or directly on the same network.")
-	} else {
+	// The relay address is advertised from config; whether it works right
+	// now is a different question, so answer it from the live status.
+	var relay *client.Status
+	if st, err := cl.Status(); err == nil {
+		relay = st.Relay
+	}
+	switch {
+	case !hasRelay(p.Addrs) || relay == nil:
 		fmt.Println("The phone must be on the same network as this machine (or on the same Tailscale network).")
+	case relay.Connected:
+		fmt.Println("The phone can be anywhere: it reaches this machine through the relay, or directly on the same network.")
+	default:
+		fmt.Println("The phone must be on the same network as this machine (or on the same Tailscale network)")
+		fmt.Printf("until the relay connects. Relay %s: %s\n", relay.URL, orString(relay.LastError, "still connecting"))
 	}
 	return nil
 }
@@ -329,6 +343,22 @@ func hasRelay(addrs []protocol.HostAddr) bool {
 		}
 	}
 	return false
+}
+
+// formatAddr renders an address with its port (falling back to the host's).
+func formatAddr(a protocol.HostAddr, hostPort int) string {
+	port := a.Port
+	if port == 0 {
+		port = hostPort
+	}
+	return net.JoinHostPort(a.IP, fmt.Sprint(port))
+}
+
+func orString(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
 }
 
 func printRelay(rs *client.Status) {
@@ -402,14 +432,19 @@ func runRelay(args []string) error {
 		printRelay(st.Relay)
 		return nil
 	}
-	// Daemon not running: report from the config and key file.
+	// Daemon not running: report from the config and key file. This is a
+	// status query, so it must not create the key (the daemon does that).
 	fmt.Println("daemon:      not running")
-	key, err := auth.EnsureHostKey(p.HostKeyFile)
-	if err != nil {
+	id := ""
+	switch key, err := auth.LoadHostKey(p.HostKeyFile); {
+	case err == nil:
+		id = wire.HostID(key.Public().(ed25519.PublicKey))
+		fmt.Printf("host id:     %s\n", id)
+	case errors.Is(err, os.ErrNotExist):
+		fmt.Println("host id:     (none yet; the daemon creates the host key on first start)")
+	default:
 		return err
 	}
-	id := wire.HostID(key.Public().(ed25519.PublicKey))
-	fmt.Printf("host id:     %s\n", id)
 	switch {
 	case !cfg.Relay.Enabled:
 		fmt.Println("relay:       off (enable with `orchestrator relay on`)")
@@ -417,7 +452,9 @@ func runRelay(args []string) error {
 		fmt.Println("relay:       no relay configured (set one with `orchestrator relay set <url>`)")
 	default:
 		fmt.Printf("relay:       %s (configured)\n", cfg.Relay.URL)
-		fmt.Printf("relay addr:  %s:%d\n", wire.Addr(id, cfg.Relay.Domain()), cfg.Relay.Port())
+		if id != "" {
+			fmt.Printf("relay addr:  %s:%d\n", wire.Addr(id, cfg.Relay.Domain()), cfg.Relay.Port())
+		}
 	}
 	return nil
 }

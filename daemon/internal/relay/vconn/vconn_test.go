@@ -87,12 +87,31 @@ func TestConnAddrsAndOnClose(t *testing.T) {
 	if c.LocalAddr().String() != "relay" {
 		t.Fatalf("local %v", c.LocalAddr())
 	}
-	if c.NetConn() != a {
-		t.Fatal("NetConn")
-	}
 	c.Close()
 	c.Close()
 	if n != 1 {
 		t.Fatalf("onClose ran %d times", n)
+	}
+}
+
+func TestListenerPushDuringCloseIsClosed(t *testing.T) {
+	// A push that lands while Close drains must not leave a live conn in the
+	// queue: Close's contract is that queued connections are closed.
+	for i := 0; i < 200; i++ {
+		l := NewListener("x")
+		a, b := net.Pipe()
+		done := make(chan error, 1)
+		go func() { done <- l.Push(context.Background(), a) }()
+		l.Close()
+		err := <-done
+		if err == nil {
+			// Accepted: it must have been closed by the listener.
+			b.SetReadDeadline(time.Now().Add(time.Second))
+			if _, rerr := b.Read(make([]byte, 1)); rerr == nil {
+				t.Fatal("queued conn survived Close")
+			}
+		}
+		a.Close()
+		b.Close()
 	}
 }

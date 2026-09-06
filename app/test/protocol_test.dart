@@ -8,6 +8,7 @@ import 'package:orchestrator/model/fs.dart';
 import 'package:orchestrator/protocol/challenge.dart';
 import 'package:orchestrator/protocol/frames.dart';
 import 'package:orchestrator/services/pair_link.dart';
+import 'package:orchestrator/ui/pair_screen.dart';
 
 void main() {
   group('frames', () {
@@ -153,9 +154,13 @@ void main() {
       expect(h.relayAddr?.isRelay, isTrue);
       expect(h.relayAddr!.portOr(h.port), 443);
       expect(h.addrs[2].portOr(h.port), 7391);
-      // A relay that worked last time is still tried first.
+      // A relay that worked last time is still tried last: direct paths
+      // must get their chance back once the phone is home again.
       h.lastGoodAddr = 'abcd.relay.example';
-      expect(h.orderedAddrs.first.isRelay, isTrue);
+      expect(h.orderedAddrs.last.isRelay, isTrue);
+      expect(h.orderedAddrs.first.ip, '10.0.0.2');
+      expect(h.relayAddr!.label(h.port), 'relay');
+      expect(h.addrs[2].label(h.port), '10.0.0.2:7391');
       final back = HostRecord.fromJson(
         jsonDecode(jsonEncode(h.toJson())) as Map<String, dynamic>,
       );
@@ -174,6 +179,36 @@ void main() {
       });
       expect(info.addrs.single.port, 443);
       expect(back.addrs, h.addrs);
+    });
+  });
+
+  group('manual address', () {
+    test('classifies IPs and relay names', () {
+      expect(
+        parseManualAddr('192.168.1.20', 7391),
+        const HostAddr('192.168.1.20', 'lan'),
+      );
+      expect(
+        parseManualAddr('192.168.1.20:9000', 7391),
+        const HostAddr('192.168.1.20', 'lan', port: 9000),
+      );
+      expect(
+        parseManualAddr('100.64.0.1', 7391),
+        const HostAddr('100.64.0.1', 'tailscale'),
+      );
+      expect(
+        parseManualAddr('100.1.2.3', 7391),
+        const HostAddr('100.1.2.3', 'lan'),
+      );
+      expect(
+        parseManualAddr(' ABCD.Relay.Example ', 7391),
+        const HostAddr('abcd.relay.example', 'relay', port: 443),
+      );
+      expect(
+        parseManualAddr('abcd.relay.example:8443', 7391),
+        const HostAddr('abcd.relay.example', 'relay', port: 8443),
+      );
+      expect(parseManualAddr('::1', 7391), const HostAddr('::1', 'lan'));
     });
   });
 

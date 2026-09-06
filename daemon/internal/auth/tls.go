@@ -14,6 +14,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,32 +40,20 @@ func EnsureTLS(certFile, keyFile, hostname string) (Identity, error) {
 			return load(certFile, keyFile)
 		}
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return Identity{}, err
-	}
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
-	if err != nil {
-		return Identity{}, err
-	}
 	if hostname == "" {
 		hostname = "orchestrator"
 	}
-	tmpl := &x509.Certificate{
-		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: hostname, Organization: []string{"Orchestrator"}},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		DNSNames:              []string{hostname, "localhost"},
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	cert, err := SelfSigned(SelfSignedSpec{
+		CommonName:   hostname,
+		Organization: "Orchestrator",
+		ValidFor:     10 * 365 * 24 * time.Hour,
+		DNSNames:     []string{hostname, "localhost"},
+	})
 	if err != nil {
 		return Identity{}, err
 	}
-	keyDER, err := x509.MarshalECPrivateKey(key)
+	der := cert.Certificate[0]
+	keyDER, err := x509.MarshalECPrivateKey(cert.PrivateKey.(*ecdsa.PrivateKey))
 	if err != nil {
 		return Identity{}, err
 	}
@@ -80,6 +69,48 @@ func EnsureTLS(certFile, keyFile, hostname string) (Identity, error) {
 		return Identity{}, err
 	}
 	return load(certFile, keyFile)
+}
+
+// SelfSignedSpec describes a self-signed server certificate.
+type SelfSignedSpec struct {
+	CommonName   string
+	Organization string
+	ValidFor     time.Duration
+	DNSNames     []string
+	IPAddresses  []net.IP
+}
+
+// SelfSigned generates a P-256 self-signed server certificate. The daemon
+// uses it for its pinned identity and the relay for its -dev apex.
+func SelfSigned(spec SelfSignedSpec) (tls.Certificate, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: spec.CommonName, Organization: []string{spec.Organization}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(spec.ValidFor),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              spec.DNSNames,
+		IPAddresses:           spec.IPAddresses,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, nil
 }
 
 func load(certFile, keyFile string) (Identity, error) {

@@ -7,6 +7,7 @@ import '../model/fs.dart';
 import '../model/host.dart';
 import '../model/session.dart';
 import '../services/keys.dart';
+import 'dialer.dart';
 import 'host_client.dart';
 
 enum ConnState {
@@ -76,8 +77,14 @@ class HostConnection extends ChangeNotifier {
   ConnState state = ConnState.idle;
   String? error;
   HostInfo? info;
+
+  /// The address the current socket was opened to (its `ip` field).
   String? connectedVia;
+  HostAddr? connectedAddr;
   DateTime? lastConnectedAt;
+
+  /// `relay` or `ip:port`, for status lines.
+  String? get viaLabel => connectedAddr?.label(host.port);
 
   final Map<String, SessionInfo> sessions = {};
   final Map<int, String> _handles = {};
@@ -191,6 +198,7 @@ class HostConnection extends ChangeNotifier {
   }
 
   static String _describe(Object e) {
+    if (e is DialFailed) e = e.last;
     if (e is TimeoutException) return 'connection timed out';
     if (e.toString().contains('SocketException')) return 'host unreachable';
     return e.toString().replaceFirst('Exception: ', '');
@@ -204,48 +212,40 @@ class HostConnection extends ChangeNotifier {
         'device key missing; forget this host and pair again',
       );
     }
-    Object? lastErr;
-    for (final addr in host.orderedAddrs) {
-      if (_stopped) throw StateError('stopped');
-      HostClient c;
-      try {
-        c = await HostClient.connect(
-          ip: addr.ip,
-          port: addr.portOr(host.port),
-          fingerprint: host.fingerprint,
-          // The relay adds a round trip to the daemon before TLS starts.
-          timeout: addr.isRelay
-              ? const Duration(seconds: 12)
-              : const Duration(seconds: 6),
-        );
-      } on FingerprintMismatch {
-        rethrow;
-      } catch (e) {
-        lastErr = e;
-        continue;
-      }
-      try {
-        final h = await c.hello(name: _deviceName(), deviceId: host.deviceId);
-        if (h.authNeeded) {
-          await c.auth(hello: h, deviceId: host.deviceId, key: key);
-        }
-        _client = c;
-        connectedVia = addr.isRelay ? 'relay' : addr.ip;
-        lastConnectedAt = DateTime.now();
-        if (host.lastGoodAddr != addr.ip) {
-          host.lastGoodAddr = addr.ip;
-          onHostChanged?.call(host);
-        }
-        _wire(c);
-        await _afterConnect(c);
-        return c;
-      } catch (e) {
-        await c.close();
-        if (_client == c) _client = null;
-        rethrow;
-      }
+    final d = await dialFirst(
+      host.orderedAddrs,
+      hostPort: host.port,
+      fingerprint: host.fingerprint,
+    );
+    final c = d.client;
+    final addr = d.addr;
+    if (_stopped) {
+      await c.close();
+      throw StateError('stopped');
     }
-    throw lastErr ?? StateError('no addresses for this host');
+    try {
+      final h = await c.hello(name: _deviceName(), deviceId: host.deviceId);
+      if (h.authNeeded) {
+        await c.auth(hello: h, deviceId: host.deviceId, key: key);
+      }
+      _client = c;
+      connectedVia = addr.ip;
+      connectedAddr = addr;
+      lastConnectedAt = DateTime.now();
+      // Only a direct address is worth remembering: the relay is tried
+      // last regardless, so it never shadows a LAN path that came back.
+      if (!addr.isRelay && host.lastGoodAddr != addr.ip) {
+        host.lastGoodAddr = addr.ip;
+        onHostChanged?.call(host);
+      }
+      _wire(c);
+      await _afterConnect(c);
+      return c;
+    } catch (e) {
+      await c.close();
+      if (_client == c) _client = null;
+      rethrow;
+    }
   }
 
   void _wire(HostClient c) {
@@ -263,6 +263,12 @@ class HostConnection extends ChangeNotifier {
     info = HostInfo.fromJson(infoReply);
     if (info!.host.isNotEmpty && host.hostname != info!.host) {
       host.hostname = info!.host;
+      onHostChanged?.call(host);
+    }
+    // The daemon knows its own port; a record paired by hand may carry
+    // whatever the user typed.
+    if (info!.port > 0 && host.port != info!.port) {
+      host.port = info!.port;
       onHostChanged?.call(host);
     }
     // Keep the address list current so a host that moves networks is still

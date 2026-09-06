@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -148,6 +150,32 @@ class _PairScreenState extends State<PairScreen> {
   }
 }
 
+/// Turns what the user typed into an address. IPs are LAN (or Tailscale for
+/// the CGNAT range); anything else is a DNS name and so a relay address,
+/// which carries its own port (443 unless given as `name:port`). An IP may
+/// also carry `:port`, which then overrides [hostPort] for that address.
+HostAddr parseManualAddr(String text, int hostPort) {
+  var s = text.trim();
+  int? port;
+  final m = RegExp(r'^(.*):(\d{1,5})$').firstMatch(s);
+  if (m != null && !s.contains(']') && ':'.allMatches(s).length == 1) {
+    s = m.group(1)!;
+    port = int.parse(m.group(2)!);
+  }
+  final ip = InternetAddress.tryParse(s);
+  if (ip == null) {
+    return HostAddr(s.toLowerCase(), 'relay', port: port ?? 443);
+  }
+  final kind = s.startsWith('100.') && _cgnat(ip) ? 'tailscale' : 'lan';
+  return HostAddr(s, kind, port: port);
+}
+
+bool _cgnat(InternetAddress ip) {
+  if (ip.type != InternetAddressType.IPv4) return false;
+  final b = ip.rawAddress;
+  return b[0] == 100 && (b[1] & 0xC0) == 64;
+}
+
 class _ManualSheet extends StatefulWidget {
   const _ManualSheet();
 
@@ -173,13 +201,12 @@ class _ManualSheetState extends State<_ManualSheet> {
 
   void _submit() {
     if (!_form.currentState!.validate()) return;
-    final ip = _addr.text.trim();
-    final kind = ip.startsWith('100.') ? 'tailscale' : 'lan';
+    final addr = parseManualAddr(_addr.text, int.parse(_port.text.trim()));
     Navigator.pop(
       context,
       PairPayload(
-        host: ip,
-        addrs: [HostAddr(ip, kind)],
+        host: addr.ip,
+        addrs: [addr],
         port: int.parse(_port.text.trim()),
         fingerprint: normalizeFingerprint(_fp.text),
         code: _code.text.trim(),
@@ -207,7 +234,10 @@ class _ManualSheetState extends State<_ManualSheet> {
               controller: _addr,
               decoration: const InputDecoration(
                 labelText: 'Address',
-                hintText: '192.168.1.20',
+                hintText: '192.168.1.20 or <id>.relay.example:443',
+                helperText:
+                    'An IP on your network, or the relay name '
+                    '(with its port) that `orchestrator pair` prints.',
               ),
               keyboardType: TextInputType.url,
               autocorrect: false,
@@ -217,7 +247,10 @@ class _ManualSheetState extends State<_ManualSheet> {
             const SizedBox(height: 8),
             TextFormField(
               controller: _port,
-              decoration: const InputDecoration(labelText: 'Port'),
+              decoration: const InputDecoration(
+                labelText: 'Host port',
+                helperText: 'The daemon\'s own port (7391 unless changed).',
+              ),
               keyboardType: TextInputType.number,
               validator: (v) =>
                   int.tryParse((v ?? '').trim()) == null ? 'number' : null,

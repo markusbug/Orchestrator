@@ -1,13 +1,9 @@
 package server
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"time"
-
-	"github.com/coder/websocket"
 
 	"github.com/markusbug/Orchestrator/daemon/internal/relay/wire"
 )
@@ -15,12 +11,6 @@ import (
 func b64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
 
 func unmarshal(b []byte, v any) error { return json.Unmarshal(b, v) }
-
-func writeJSON(ctx context.Context, ws *websocket.Conn, v any) error {
-	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	return ws.Write(wctx, websocket.MessageText, wire.Marshal(v))
-}
 
 // apexHandler serves the HTTP API on the relay's own domain.
 func (s *Server) apexHandler() http.Handler {

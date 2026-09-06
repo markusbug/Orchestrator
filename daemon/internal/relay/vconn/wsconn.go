@@ -26,12 +26,13 @@ func FromWebSocket(ctx context.Context, ws *websocket.Conn) net.Conn {
 	ws.SetReadLimit(1 << 20)
 	go func() { // websocket -> pipe
 		defer theirs.Close()
+		buf := make([]byte, 32<<10)
 		for {
 			_, r, err := ws.Reader(ctx)
 			if err != nil {
 				return
 			}
-			if _, err := io.Copy(theirs, r); err != nil {
+			if _, err := io.CopyBuffer(theirs, r, buf); err != nil {
 				// Our side was closed; the other goroutine closes the socket.
 				return
 			}

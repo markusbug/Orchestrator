@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -129,9 +130,14 @@ func TestRelayValidate(t *testing.T) {
 func TestUpdatePreservesKeys(t *testing.T) {
 	dir := t.TempDir()
 	p, _ := DefaultPaths(dir)
-	os.WriteFile(p.ConfigFile, []byte("port = 9000\nroots = [\"/srv\"]\n# a comment\n"), 0o600)
+	const orig = "# main settings\nport = 9000\n\n# roots = [\"/other\"]\nroots = [\"/srv\"]\n# a comment\n"
+	os.WriteFile(p.ConfigFile, []byte(orig), 0o600)
 	if err := SetRelay(p, true, "https://r.example"); err != nil {
 		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(p.ConfigFile)
+	if !strings.HasPrefix(string(got), orig) {
+		t.Fatalf("hand-written content changed:\n%s", got)
 	}
 	cfg, err := Load(p)
 	if err != nil {
@@ -145,6 +151,10 @@ func TestUpdatePreservesKeys(t *testing.T) {
 	}
 	if err := SetRelay(p, false, ""); err != nil {
 		t.Fatal(err)
+	}
+	got2, _ := os.ReadFile(p.ConfigFile)
+	if !strings.HasPrefix(string(got2), orig) || strings.Count(string(got2), "[relay]") != 1 || strings.Count(string(got2), "enabled =") != 1 {
+		t.Fatalf("second edit did not rewrite in place:\n%s", got2)
 	}
 	cfg, _ = Load(p)
 	if cfg.Relay.Enabled || cfg.Relay.URL != "https://r.example" {
@@ -161,5 +171,53 @@ func TestUpdatePreservesKeys(t *testing.T) {
 	}
 	if cfg, _ := Load(p2); cfg.Relay.URL != "https://x.example" {
 		t.Fatal("fresh file")
+	}
+}
+
+func TestSetSectionKeysEditsInPlace(t *testing.T) {
+	doc := "port = 1\n\n[relay]\n# keep me\nenabled = false  # trailing\n\n[other]\nx = 1\n"
+	out := setSectionKeys(doc, "relay", []kv{{"enabled", "true"}, {"url", `"https://r"`}})
+	want := "port = 1\n\n[relay]\n# keep me\nenabled = true\nurl = \"https://r\"\n\n[other]\nx = 1\n"
+	if out != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", out, want)
+	}
+	// Section at the end without a trailing newline.
+	out = setSectionKeys("[relay]\nurl = \"a\"", "relay", []kv{{"enabled", "true"}})
+	if out != "[relay]\nurl = \"a\"\nenabled = true\n" {
+		t.Fatalf("no-trailing-newline:\n%s", out)
+	}
+	// Empty document.
+	if out = setSectionKeys("", "relay", []kv{{"enabled", "true"}}); out != "[relay]\nenabled = true\n" {
+		t.Fatalf("empty:\n%s", out)
+	}
+}
+
+func TestSetRelayRefusesUneditableLayout(t *testing.T) {
+	dir := t.TempDir()
+	p, _ := DefaultPaths(dir)
+	// Dotted keys at top level define relay.enabled outside a [relay]
+	// section; appending a section would be a TOML error, so refuse.
+	os.WriteFile(p.ConfigFile, []byte("relay.enabled = true\n"), 0o600)
+	if err := SetRelay(p, false, ""); err == nil {
+		t.Fatal("expected an error for dotted relay keys")
+	}
+	if err := SetRelay(p, false, ""); err == nil {
+		t.Fatal("still no error")
+	}
+	got, _ := os.ReadFile(p.ConfigFile)
+	if string(got) != "relay.enabled = true\n" {
+		t.Fatalf("file modified: %q", got)
+	}
+}
+
+func TestTomlString(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://r.example:8443": `"https://r.example:8443"`,
+		`a"b\c`:                  `"a\"b\\c"`,
+		"x\ny":                   `"x\ny"`,
+	} {
+		if got := tomlString(in); got != want {
+			t.Errorf("tomlString(%q) = %s want %s", in, got, want)
+		}
 	}
 }

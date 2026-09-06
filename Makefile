@@ -1,8 +1,9 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# Each binary has its own tag series: v* for the daemon, relay-v* for the
+# relay (the app uses app-v*). Matching on the prefix keeps one series from
+# stamping another; outside a git checkout the version is "dev".
+VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=$(VERSION)
-# The relay has its own tag series (relay-v*), so its version is derived
-# separately and the prefix is stripped.
-RELAY_VERSION ?= $(shell git describe --tags --match 'relay-v*' --always --dirty 2>/dev/null | sed 's/^relay-//' || echo dev)
+RELAY_VERSION ?= $(shell (git describe --tags --match 'relay-v*' --always --dirty 2>/dev/null || echo dev) | sed 's/^relay-//')
 RELAY_LDFLAGS := -s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=$(RELAY_VERSION)
 LOAD_HOSTS ?= 1000
 

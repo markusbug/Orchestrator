@@ -1,13 +1,8 @@
 package server
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"math/big"
 	"net"
 	"net/url"
 	"path/filepath"
@@ -15,6 +10,8 @@ import (
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+
+	"github.com/markusbug/Orchestrator/daemon/internal/auth"
 )
 
 // newApexTLS builds the TLS configuration for connections whose SNI is the
@@ -66,29 +63,14 @@ func newApexTLS(cfg *Config) (*tls.Config, *x509.Certificate, error) {
 	return tc, nil, nil
 }
 
+// selfSigned makes the apex certificate for -dev: one year, also valid for
+// localhost and the loopback addresses so a local daemon can be pointed at it.
 func selfSigned(domain string) (tls.Certificate, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: domain, Organization: []string{"Orchestrator relay (dev)"}},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().AddDate(1, 0, 0),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	return auth.SelfSigned(auth.SelfSignedSpec{
+		CommonName:   domain,
+		Organization: "Orchestrator relay (dev)",
+		ValidFor:     365 * 24 * time.Hour,
 		DNSNames:     []string{domain, "localhost"},
 		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	leaf, _ := x509.ParseCertificate(der)
-	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}, nil
+	})
 }

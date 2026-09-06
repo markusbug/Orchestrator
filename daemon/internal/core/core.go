@@ -123,9 +123,13 @@ func (c *Core) Close() {
 }
 
 // Addrs lists reachable addresses: LAN and Tailscale first, then the relay
-// name when a relay is configured.
+// name when a relay is configured. Every entry carries its port so a client
+// never has to guess which port belongs to which address.
 func (c *Core) Addrs() []protocol.HostAddr {
 	addrs := netaddr.List()
+	for i := range addrs {
+		addrs[i].Port = c.Cfg.Port
+	}
 	if r := c.RelayInfo(); r != nil {
 		addrs = append(addrs, protocol.HostAddr{IP: r.Addr, Kind: protocol.AddrRelay, Port: r.Port})
 	}
@@ -133,14 +137,19 @@ func (c *Core) Addrs() []protocol.HostAddr {
 }
 
 // RelayInfo describes the relay path, or nil when no relay is configured.
+// The address is what the running client uses, or what the config implies
+// before the client exists.
 func (c *Core) RelayInfo() *protocol.RelayInfo {
 	if !c.Cfg.Relay.Active() {
 		return nil
 	}
-	return &protocol.RelayInfo{
-		URL: c.Cfg.Relay.URL, HostID: c.HostID,
-		Addr: wire.Addr(c.HostID, c.Cfg.Relay.Domain()), Port: c.Cfg.Relay.Port(),
+	info := &protocol.RelayInfo{URL: c.Cfg.Relay.URL, HostID: c.HostID}
+	if rc := c.Relay; rc != nil {
+		info.Addr, info.Port = rc.Addr(), rc.Port()
+	} else {
+		info.Addr, info.Port = wire.Addr(c.HostID, c.Cfg.Relay.Domain()), c.Cfg.Relay.Port()
 	}
+	return info
 }
 
 // HostInfo describes this host to clients.
