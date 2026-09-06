@@ -100,7 +100,11 @@ jobs:
           generate_release_notes: true
 
   macos:
-    runs-on: macos-14
+    # Not a pinned older image: connectivity_plus (a phone-app dependency that
+    # still gets compiled into the macOS build) uses NWPath.isUltraConstrained,
+    # which needs the macOS 26 SDK. ios.yml is on macos-latest for the same
+    # reason.
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -158,9 +162,11 @@ jobs:
         run: |
           set -euo pipefail
           brew install create-dmg
+          # flutter build macos is single-arch, so the dmg is named for the
+          # runner's architecture. The CLI inside it is universal.
           create-dmg --volname Orchestrator --window-size 720 400 \
             --icon "Orchestrator.app" 200 170 --app-drop-link 480 170 \
-            "dist/Orchestrator-${{ steps.ver.outputs.version }}-arm64.dmg" \
+            "dist/Orchestrator-${{ steps.ver.outputs.version }}-$(uname -m).dmg" \
             "app/build/macos/Build/Products/Release/Orchestrator.app"
       - name: checksums
         run: cd dist && rm -f orchestrator_darwin_* && shasum -a 256 -- * > SHA256SUMS.macos && cat SHA256SUMS.macos
