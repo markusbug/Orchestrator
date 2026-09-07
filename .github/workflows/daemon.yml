@@ -7,6 +7,9 @@ on:
   pull_request:
     paths: ["daemon/**", ".github/workflows/daemon.yml"]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,8 +17,8 @@ jobs:
       run:
         working-directory: daemon
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: daemon/go.mod
           cache-dependency-path: daemon/go.sum
@@ -31,13 +34,13 @@ jobs:
         run: GOOS=linux GOARCH=arm64 go build -o /dev/null ./...
       - name: build
         run: go build -ldflags "-s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=${GITHUB_SHA::8}" -o ../bin/orchestrator ./cmd/orchestrator
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: orchestrator-linux-amd64
           path: bin/orchestrator
       - name: build relay
         run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=${GITHUB_SHA::8}" -o ../bin/relay ./cmd/relay
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: relay-linux-amd64
           path: bin/relay

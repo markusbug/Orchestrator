@@ -7,14 +7,21 @@
 # or with --headless, installs just the daemon and pairs from the terminal,
 # because the desktop app is x86_64-only for now.
 #
-# Flags: --version <tag>  install a specific desktop-v* release
-#        --headless       daemon only, no desktop app
+# Every download is checked against the release's SHA256SUMS, and against its
+# Sigstore build provenance when `gh` is installed. Verification fails closed.
+#
+# Flags: --version <tag>       install a specific desktop-v* release
+#        --headless            daemon only, no desktop app
+#        --require-provenance  refuse to install unattested artifacts
+#        --skip-verify         install without checking; last resort
 #        --help
 set -eu
 
 REPO=markusbug/Orchestrator
 VERSION=
 HEADLESS=0
+SKIP_VERIFY=0
+REQUIRE_PROVENANCE=0
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -24,9 +31,12 @@ usage() {
 	cat <<'EOF'
 Install Orchestrator on Linux.
 
-  --version <tag>   install a specific desktop-v* release
-  --headless        install only the daemon, no desktop app
-  --help            this text
+  --version <tag>        install a specific desktop-v* release
+  --headless             install only the daemon, no desktop app
+  --require-provenance   refuse to install without verified build provenance
+                         (needs the GitHub CLI)
+  --skip-verify          install without checking anything; last resort
+  --help                 this text
 EOF
 }
 
@@ -34,6 +44,8 @@ while [ $# -gt 0 ]; do
 	case $1 in
 	--version) VERSION=$2; shift 2 ;;
 	--headless) HEADLESS=1; shift ;;
+	--require-provenance) REQUIRE_PROVENANCE=1; shift ;;
+	--skip-verify) SKIP_VERIFY=1; shift ;;
 	-h|--help) usage; exit 0 ;;
 	*) die "unknown flag: $1" ;;
 	esac
@@ -86,15 +98,58 @@ ver=${VERSION#desktop-v}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-# Every artifact is checked against the release's SHA256SUMS.
+# Every artifact is checked against the release's SHA256SUMS, and against the
+# release's build provenance when the GitHub CLI is on hand. The checksum leg
+# fails closed: an install that cannot verify is an install that does not
+# happen, because silently skipping verification is worth exactly as much to
+# an attacker as no verification at all.
 verify() {
-	[ -f "$tmp/SHA256SUMS" ] || curl -fsSL -o "$tmp/SHA256SUMS" "$BASE/SHA256SUMS" || {
-		echo "  note: no SHA256SUMS in this release, skipping verification" >&2
+	name=$1
+	if [ "$SKIP_VERIFY" -eq 1 ]; then
+		echo "  warning: --skip-verify given, installing $name unchecked" >&2
+		return 0
+	fi
+	command -v sha256sum >/dev/null ||
+		die "sha256sum is needed to verify the download (or pass --skip-verify)"
+	[ -f "$tmp/SHA256SUMS" ] || curl -fsSL -o "$tmp/SHA256SUMS" "$BASE/SHA256SUMS" ||
+		die "$VERSION publishes no SHA256SUMS, so $name cannot be verified"
+	# Exact filename match: a grep pattern would treat the dots in a version
+	# as wildcards and could pick up a neighbouring artifact's line.
+	awk -v n="$name" '$2 == n || $2 == "*" n' "$tmp/SHA256SUMS" >"$tmp/want"
+	[ -s "$tmp/want" ] || die "$name is not listed in SHA256SUMS"
+	(cd "$tmp" && sha256sum -c - <want >/dev/null) ||
+		die "checksum mismatch for $name -- do not install it"
+	verify_provenance "$name"
+}
+
+# SHA256SUMS sits in the same release as the artifact, so whoever could
+# replace one could replace the other: it proves the bytes arrived intact,
+# not that the release is ours. Provenance is what proves that -- it is
+# signed on the runner through Sigstore and cannot be minted by a token that
+# only uploads release assets.
+#
+# gh looks an attestation up by the artifact's digest, so a tampered file and
+# a release built before provenance existed fail identically: "none found".
+# That is why the default is a note rather than an error, and why the note is
+# worth little on its own -- --require-provenance is the setting that has
+# teeth. Once every supported release carries provenance, make it the default.
+verify_provenance() {
+	command -v gh >/dev/null || {
+		if [ "$REQUIRE_PROVENANCE" -eq 1 ]; then
+			die "--require-provenance needs the GitHub CLI (gh) installed"
+		fi
 		return 0
 	}
-	command -v sha256sum >/dev/null || return 0
-	(cd "$tmp" && grep " $1\$" SHA256SUMS | sha256sum -c -) ||
-		die "checksum mismatch for $1"
+	if out=$(gh attestation verify "$tmp/$1" -R "$REPO" 2>&1); then
+		echo "  provenance verified for $1"
+		return 0
+	fi
+	if [ "$REQUIRE_PROVENANCE" -eq 1 ]; then
+		die "provenance verification failed for $1 -- do not install it:
+$out"
+	fi
+	echo "  note: could not verify provenance for $1; re-run with" >&2
+	echo "        --require-provenance to make this fatal" >&2
 }
 
 install_headless() {

@@ -13,8 +13,9 @@ on:
       - ".github/workflows/desktop.yml"
   workflow_dispatch:
 
+# The default for every job here; the release jobs opt up individually.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # Runs on every trigger, not just pull requests: work on this repo lands
@@ -22,7 +23,7 @@ jobs:
   lint-scripts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: shell syntax
         run: |
           sh -n scripts/install.sh
@@ -35,15 +36,19 @@ jobs:
   linux:
     runs-on: ubuntu-22.04 # oldest glibc we support; newer distros still run it
     timeout-minutes: 30
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the provenance attestation
+      attestations: write # record it
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # git describe needs tags
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: daemon/go.mod
           cache-dependency-path: daemon/go.sum
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: "3.47.2"
           channel: stable
@@ -77,24 +82,41 @@ jobs:
           # The packaging script picks the native one up from bin/.
           install -Dm755 ../dist/orchestrator_linux_amd64 ../bin/orchestrator
       - name: tools
+        # Both pinned. These run inside the job that publishes the release, so
+        # an unpinned @latest and a rolling download are each a way into it. A
+        # checksum mismatch means upstream moved the artifact: check the new
+        # one by hand before bumping the hash here.
+        env:
+          APPIMAGETOOL_SHA256: b90f4a8b18967545fda78a445b27680a1642f1ef9488ced28b65398f2be7add2
         run: |
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
-          curl -fsSL -o /usr/local/bin/appimagetool \
+          set -euo pipefail
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+          curl -fsSL -o /tmp/appimagetool \
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          sudo chmod +x /usr/local/bin/appimagetool
+          echo "$APPIMAGETOOL_SHA256  /tmp/appimagetool" | sha256sum -c -
+          sudo install -m 0755 /tmp/appimagetool /usr/local/bin/appimagetool
       - name: build the .deb and the AppImage
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
           packaging/build-linux.sh --version "${{ steps.ver.outputs.version }}"
       - name: checksums
         run: cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: desktop-linux
           path: dist/
           retention-days: 14
+      # Signs each artifact to this workflow, commit and runner, which is what
+      # SHA256SUMS cannot do: the sums file sits in the release an attacker
+      # would be replacing. SECURITY.md has the rest. Needs a public repo, so
+      # the gate below turns this on by itself once the repo is published.
+      - name: attest provenance
+        if: github.ref_type == 'tag' && github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: dist/*
       - if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*
           generate_release_notes: true
@@ -106,15 +128,19 @@ jobs:
     # reason.
     runs-on: macos-latest
     timeout-minutes: 30
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the provenance attestation
+      attestations: write # record it
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: daemon/go.mod
           cache-dependency-path: daemon/go.sum
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: "3.47.2"
           channel: stable
@@ -170,13 +196,22 @@ jobs:
             "app/build/macos/Build/Products/Release/Orchestrator.app"
       - name: checksums
         run: cd dist && rm -f orchestrator_darwin_* && shasum -a 256 -- * > SHA256SUMS.macos && cat SHA256SUMS.macos
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: desktop-macos
           path: dist/
           retention-days: 14
+      # Signs each artifact to this workflow, commit and runner, which is what
+      # SHA256SUMS cannot do: the sums file sits in the release an attacker
+      # would be replacing. SECURITY.md has the rest. Needs a public repo, so
+      # the gate below turns this on by itself once the repo is published.
+      - name: attest provenance
+        if: github.ref_type == 'tag' && github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: dist/*
       - if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*
           generate_release_notes: true

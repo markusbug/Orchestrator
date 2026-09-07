@@ -7,15 +7,16 @@ on:
     paths: ["deploy/relay/**", ".github/workflows/relay.yml"]
   workflow_dispatch:
 
+# The default for every job here; the release jobs opt up individually.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   lint-deploy:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: shell syntax
         run: bash -n deploy/relay/install.sh
       - name: shellcheck
@@ -25,14 +26,18 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the provenance attestation
+      attestations: write # record it
     defaults:
       run:
         working-directory: daemon
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # git describe needs tags
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: daemon/go.mod
           cache-dependency-path: daemon/go.sum
@@ -62,13 +67,22 @@ jobs:
           done
           tar -czf ../dist/relay-deploy.tar.gz -C ../deploy relay
           (cd ../dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: relay-dist
           path: dist/
           retention-days: 14
+      # Signs each artifact to this workflow, commit and runner, which is what
+      # SHA256SUMS cannot do: the sums file sits in the release an attacker
+      # would be replacing. SECURITY.md has the rest. Needs a public repo, so
+      # the gate below turns this on by itself once the repo is published.
+      - name: attest provenance
+        if: github.ref_type == 'tag' && github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: dist/*
       - if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: dist/*
           generate_release_notes: true
