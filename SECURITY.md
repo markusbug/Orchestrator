@@ -55,7 +55,10 @@ fingerprint, and the code.
 
 **Device authentication.** On pairing, the phone generates an Ed25519 key pair in the
 platform keystore (iOS Keychain / Android Keystore via `flutter_secure_storage`) and
-registers the public key. Every later connection signs a challenge built from
+registers the public key. The key is stored device-only
+(`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` on iOS), so it is not carried in
+an encrypted iTunes/Finder backup and cannot be restored onto a different phone —
+restoring a backup means pairing again. Every later connection signs a challenge built from
 `"orch-auth-v1"`, a fresh 32-byte server nonce, the client's nonce, the server's
 certificate fingerprint, and the device id. Server nonces are single-use, and binding
 the fingerprint into the signature stops a signature captured on one host from being
@@ -122,7 +125,8 @@ was shown — is visible to every device paired to that host.
 - **Protecting against a hostile relay for metadata.** A relay operator learns who is
   online and when. Run your own relay if that matters (see [docs/RELAY.md](docs/RELAY.md)).
 - **Protecting against a compromised phone.** A device key extracted from an unlocked,
-  compromised phone is as good as the phone.
+  compromised phone is as good as the phone. Backups are covered — the key is
+  device-only, so it is not in one — but a phone an attacker can read is not.
 
 ## Running your own relay
 

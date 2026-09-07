@@ -55,7 +55,15 @@ abstract class SecretStore {
 class KeychainStore implements SecretStore {
   KeychainStore()
     : _storage = const FlutterSecureStorage(
-        iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+        // first_unlock_this_device, not first_unlock: the device key must not
+        // travel. Without ThisDeviceOnly the key is included in an encrypted
+        // iTunes/Finder backup and restores onto a *different* phone, which
+        // would hand whoever holds that backup a paired device — a shell on
+        // the paired machine — without ever touching this one. The cost is
+        // that restoring a backup requires re-pairing, which is correct.
+        iOptions: IOSOptions(
+          accessibility: KeychainAccessibility.first_unlock_this_device,
+        ),
       );
 
   final FlutterSecureStorage _storage;
