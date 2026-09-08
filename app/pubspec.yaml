@@ -59,6 +59,24 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # Generates the iOS and Android launcher icons from assets/icon/.
+  # Regenerate after changing those with:
+  #   dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.4
+
+# Sources are assets/icon/*.svg; the PNGs beside them are rasterised from those,
+# so edit the SVG and re-export rather than touching the PNG. iOS must not carry
+# an alpha channel, hence remove_alpha_ios. The Android foreground is inset for
+# the adaptive-icon safe zone; the full-bleed icon is what older launchers use.
+flutter_launcher_icons:
+  image_path: "assets/icon/icon.png"
+  remove_alpha_ios: true
+  ios: true
+  android: "ic_launcher"
+  adaptive_icon_background: "#D97757"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  min_sdk_android: 21
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
