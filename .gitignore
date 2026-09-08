@@ -34,3 +34,7 @@ dist/
 
 # Build output
 bin/
+
+# firebase CLI
+firebase-debug.log
+site/.firebase/

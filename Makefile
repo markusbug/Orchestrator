@@ -54,5 +54,11 @@ run-relay-dev: build-relay ## self-signed relay on 127.0.0.1:8443 with metrics o
 relay-load: ## open LOAD_HOSTS fake hosts against the local dev relay (see cmd/relayload)
 	cd daemon && go run -tags live ./cmd/relayload -relay https://localhost:8443 -insecure -hosts $(LOAD_HOSTS) -rate 200 -duration 1m
 
+site-preview: ## serve site/public at http://127.0.0.1:8712 (Ctrl-C to stop)
+	cd site/public && python3 -m http.server 8712
+
+deploy-site: ## publish site/ to orc.markushaas.com (needs: firebase login)
+	cd site && firebase deploy --only hosting:orc
+
 clean:
 	rm -rf bin dist

@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "orc-terminal"
+  },
+  "targets": {
+    "orc-terminal": {
+      "hosting": {
+        "orc": [
+          "orc-terminal"
+        ]
+      }
+    }
+  }
+}
