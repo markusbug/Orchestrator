@@ -82,7 +82,9 @@ Not yet. The daemon has no ConPTY support, so the machine side is Unix-only toda
   <https://orc.markushaas.com>. Every `app-v*` tag builds both the signed TestFlight
   upload ([docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)) and an unsigned IPA you can sideload
   instead ([MVP.md](MVP.md) has those steps).
-- **Android** — debug builds only so far.
+- **Android** — runs on a real device, and `flutter build appbundle --release` produces
+  a signed bundle from `android/key.properties`. Not on Play yet, and no CI job builds
+  it, so the bundle is a local build for now.
 
 ## First run
 

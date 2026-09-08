@@ -77,7 +77,7 @@ See the checklist below. Ticked items were verified by hand on 2026-09-05 with t
 
 - Remote access from outside the LAN (Tailscale first, relay later). The relay is also what removes every firewall and port step for end users; the MVP's `ufw allow` hint is developer-only scaffolding, not the product.
 - macOS and Windows hosts. Design for them, ship after Ubuntu works.
-- Android build. Same Flutter code, enabled once the iOS app is usable.
+- ~~Android build. Same Flutter code, enabled once the iOS app is usable.~~ Runs on a real Android device as of 2026-09-08; a release-signed app bundle builds locally. Play Store listing is still out.
 - ~~Desktop GUI, tray app, setup wizard.~~ Built after the MVP; see [docs/DESKTOP.md](docs/DESKTOP.md).
 - ~~Native installers (.deb, .dmg, .exe).~~ `.deb`, AppImage and `.dmg` ship on `desktop-v*` tags; Windows is still out.
 - Relay server, accounts, billing, push notifications. Push is also impossible on a free Apple ID.
