@@ -208,42 +208,37 @@ jobs:
           plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
       - name: pub get
         run: flutter pub get
-      # Two steps, not `flutter build ipa`: the Runner target is set to
-      # automatic signing with no team, which `flutter build ipa` cannot
-      # override. This builds the Flutter side unsigned (which also writes
-      # Generated.xcconfig and installs the pods), then archives with the
-      # signing settings forced from the command line, where they outrank
-      # anything in the project.
-      - name: build (no codesign)
-        run: |
-          flutter build ios --release --no-codesign \
-            --build-name="${{ steps.ver.outputs.name }}" \
-            --build-number="${{ steps.ver.outputs.number }}"
-      - name: archive
+      # Signing goes in the Runner target's xcconfig rather than on the
+      # xcodebuild command line. Command-line settings apply to every target in
+      # the build, and the Flutter plugins are Swift packages that reject a
+      # provisioning profile outright ("does not support provisioning
+      # profiles"). Flutter/Release.xcconfig is the base configuration of the
+      # Runner target alone, and the target sets none of these itself, so what
+      # lands here is what the app gets signed with. Not committed: it holds
+      # the profile uuid, which changes whenever the profile is regenerated.
+      - name: signing settings
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          xcodebuild archive \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -destination generic/platform=iOS \
-            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
-            CODE_SIGN_STYLE=Manual \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            "CODE_SIGN_IDENTITY[sdk=iphoneos*]=Apple Distribution" \
-            OTHER_CODE_SIGN_FLAGS="--keychain=$KEYCHAIN"
-      - name: export the ipa
+          cat >> ios/Flutter/Release.xcconfig <<CONF
+
+          CODE_SIGN_STYLE = Manual
+          DEVELOPMENT_TEAM = $TEAM_ID
+          PROVISIONING_PROFILE_SPECIFIER = $PROFILE_UUID
+          CODE_SIGN_IDENTITY = Apple Distribution
+          CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution
+          OTHER_CODE_SIGN_FLAGS = --keychain=$KEYCHAIN
+          CONF
+          cat ios/Flutter/Release.xcconfig
+      - name: build the ipa
         run: |
           set -euo pipefail
-          xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -exportPath "$RUNNER_TEMP/ipa"
-          ls -la "$RUNNER_TEMP/ipa"
+          flutter build ipa --release \
+            --build-name="${{ steps.ver.outputs.name }}" \
+            --build-number="${{ steps.ver.outputs.number }}" \
+            --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
+          ls -la build/ios/ipa
       - name: upload to TestFlight
         env:
           KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
@@ -257,7 +252,7 @@ jobs:
           key="$HOME/.appstoreconnect/private_keys/AuthKey_$KEY_ID.p8"
           echo "$PRIVATE_KEY" | base64 -d > "$key"
           chmod 600 "$key"
-          ipa=$(ls "$RUNNER_TEMP/ipa"/*.ipa)
+          ipa=$(ls build/ios/ipa/*.ipa)
           # Validation first: it catches a bad bundle in under a minute, where
           # the upload itself fails slowly and less clearly.
           xcrun altool --validate-app -f "$ipa" -t ios \
