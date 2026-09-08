@@ -75,7 +75,9 @@ Not yet. The daemon has no ConPTY support, so the machine side is Unix-only toda
 ### Your phone
 
 - **iOS** — there is no App Store listing. Each `app-v*` tag builds an unsigned IPA in
-  GitHub Actions which you sideload; [MVP.md](MVP.md) has the steps.
+  GitHub Actions which you sideload; [MVP.md](MVP.md) has the steps. The same tag can
+  also ship a signed build to TestFlight once the paid Apple Developer Program and the
+  signing secrets are in place — see [docs/TESTFLIGHT.md](docs/TESTFLIGHT.md).
 - **Android** — debug builds only so far.
 
 ## First run
@@ -133,4 +135,4 @@ To exercise the app's networking against the real daemon, run `orchestrator pair
 ORCH_LIVE_PORT=7391 ORCH_LIVE_CODE=123456 ORCH_LIVE_FP=sha256:... flutter test test/live_test.dart
 ```
 
-The iOS build runs in GitHub Actions on `app-v*` tags (`.github/workflows/ios.yml`) and produces an unsigned IPA for sideloading. See [MVP.md](MVP.md) for the protocol, scope, and sideloading steps.
+The iOS build runs in GitHub Actions on `app-v*` tags (`.github/workflows/ios.yml`) and produces an unsigned IPA for sideloading, plus a TestFlight upload when the signing secrets exist ([docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)). See [MVP.md](MVP.md) for the protocol, scope, and sideloading steps.

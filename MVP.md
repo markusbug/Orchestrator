@@ -81,7 +81,7 @@ See the checklist below. Ticked items were verified by hand on 2026-09-05 with t
 - ~~Desktop GUI, tray app, setup wizard.~~ Built after the MVP; see [docs/DESKTOP.md](docs/DESKTOP.md).
 - ~~Native installers (.deb, .dmg, .exe).~~ `.deb`, AppImage and `.dmg` ship on `desktop-v*` tags; Windows is still out.
 - Relay server, accounts, billing, push notifications. Push is also impossible on a free Apple ID.
-- App Store / TestFlight distribution. Requires the paid Apple Developer Program.
+- ~~App Store / TestFlight distribution. Requires the paid Apple Developer Program.~~ `ios.yml` uploads to TestFlight on `app-v*` tags once the Developer Program membership and signing secrets exist; see [docs/TESTFLIGHT.md](docs/TESTFLIGHT.md). App Store listing is still out.
 - Structured/chat rendering of Claude Code. Terminal only.
 - Session survival across daemon restarts. Stale sessions are marked and can be resumed with one tap.
 

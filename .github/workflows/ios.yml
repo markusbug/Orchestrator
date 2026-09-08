@@ -61,3 +61,214 @@ jobs:
         with:
           files: app/Orchestrator-unsigned.ipa
           generate_release_notes: true
+
+  # The `secrets` context is not available in a job-level `if`, so this cheap
+  # Linux job reports whether TestFlight signing is set up. Until every secret
+  # exists the macOS job below is skipped and no runner minutes are spent on it.
+  # docs/TESTFLIGHT.md is the one-time setup.
+  configured:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_DIST_CERT_P12: ${{ secrets.APPLE_DIST_CERT_P12 }}
+          APPLE_DIST_CERT_PASSWORD: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          set -eo pipefail
+          missing=
+          for name in APPLE_TEAM_ID APPLE_DIST_CERT_P12 APPLE_DIST_CERT_PASSWORD \
+                      APPLE_PROVISIONING_PROFILE APPSTORE_KEY_ID APPSTORE_ISSUER_ID \
+                      APPSTORE_PRIVATE_KEY; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::TestFlight upload skipped, missing secrets:$missing"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Signed App Store build, uploaded to TestFlight. Runs beside the unsigned
+  # sideload build above rather than after it: the two need different
+  # provisioning, so neither archive can be reused for the other.
+  testflight:
+    needs: configured
+    if: needs.configured.outputs.ready == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app
+    env:
+      BUNDLE_ID: io.freedomfactory.orchestrator
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+      - id: ver
+        name: version
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            name="${GITHUB_REF_NAME#app-v}"
+          else
+            name="$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)"
+          fi
+          # App Store Connect rejects a build number it has already seen, and
+          # pubspec's `+N` is bumped by hand. The run number always climbs, so
+          # every upload gets a fresh one; a re-run of a failed job reuses it,
+          # which is what we want.
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "number=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "building $name ($GITHUB_RUN_NUMBER)"
+      - name: import the signing certificate
+        env:
+          P12: ${{ secrets.APPLE_DIST_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          security create-keychain -p "$password" "$keychain"
+          # Without this the keychain relocks mid-build and codesign fails.
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$P12" | base64 -d > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$keychain" -P "$P12_PASSWORD" \
+            -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security
+          # Lets codesign use the key without a UI prompt no one can answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" \
+            $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/dist.p12"
+          security find-identity -v -p codesigning "$keychain"
+      - name: install the provisioning profile
+        env:
+          PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          echo "$PROFILE" | base64 -d > "$RUNNER_TEMP/profile.mobileprovision"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
+          appid=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")
+          # Fail here with a readable message rather than 20 minutes later
+          # inside xcodebuild, where the same mistake is a wall of red.
+          if [ "$appid" != "$TEAM_ID.$BUNDLE_ID" ]; then
+            echo "profile is for $appid, expected $TEAM_ID.$BUNDLE_ID" >&2
+            exit 1
+          fi
+          echo "PROFILE_UUID=$uuid" >> "$GITHUB_ENV"
+          # Xcode 16 moved the directory it reads profiles from; write both.
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                     "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir"
+            cp "$RUNNER_TEMP/profile.mobileprovision" "$dir/$uuid.mobileprovision"
+          done
+      - name: export options
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          # Generated rather than committed: it carries the team id and the
+          # profile uuid, neither of which is known outside the secrets.
+          # `app-store-connect` is the Xcode 15.3+ name for what used to be
+          # `app-store`.
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$BUNDLE_ID</key><string>$PROFILE_UUID</string>
+            </dict>
+            <key>uploadSymbols</key><true/>
+            <key>stripSwiftSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
+      - name: pub get
+        run: flutter pub get
+      # Two steps, not `flutter build ipa`: the Runner target is set to
+      # automatic signing with no team, which `flutter build ipa` cannot
+      # override. This builds the Flutter side unsigned (which also writes
+      # Generated.xcconfig and installs the pods), then archives with the
+      # signing settings forced from the command line, where they outrank
+      # anything in the project.
+      - name: build (no codesign)
+        run: |
+          flutter build ios --release --no-codesign \
+            --build-name="${{ steps.ver.outputs.name }}" \
+            --build-number="${{ steps.ver.outputs.number }}"
+      - name: archive
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -destination generic/platform=iOS \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            "CODE_SIGN_IDENTITY[sdk=iphoneos*]=Apple Distribution" \
+            OTHER_CODE_SIGN_FLAGS="--keychain=$KEYCHAIN"
+      - name: export the ipa
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/ipa"
+          ls -la "$RUNNER_TEMP/ipa"
+      - name: upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # altool looks the key up by id in this directory; there is no flag
+          # for passing the file itself.
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          key="$HOME/.appstoreconnect/private_keys/AuthKey_$KEY_ID.p8"
+          echo "$PRIVATE_KEY" | base64 -d > "$key"
+          chmod 600 "$key"
+          ipa=$(ls "$RUNNER_TEMP/ipa"/*.ipa)
+          # Validation first: it catches a bad bundle in under a minute, where
+          # the upload itself fails slowly and less clearly.
+          xcrun altool --validate-app -f "$ipa" -t ios \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+          xcrun altool --upload-app -f "$ipa" -t ios \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+          rm -f "$key"
+      - name: clean up
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN" || true
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_"*.p8
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision" \
+                "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
