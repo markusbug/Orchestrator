@@ -17,7 +17,7 @@ class HostsScreen extends StatelessWidget {
     final hosts = model.hosts;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Orchestrator'),
+        title: const Text('Orc Terminal'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),

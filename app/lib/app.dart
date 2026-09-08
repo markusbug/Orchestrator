@@ -33,7 +33,7 @@ class OrchestratorApp extends StatelessWidget {
         builder: (context, _) {
           final Settings s = model.settings;
           return MaterialApp(
-            title: 'Orchestrator',
+            title: 'Orc Terminal',
             debugShowCheckedModeBanner: false,
             themeMode: s.themeMode,
             theme: orchestratorTheme(Brightness.light),
