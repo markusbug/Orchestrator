@@ -7,7 +7,8 @@ import '../app.dart';
 import '../model/host.dart';
 import '../services/pair_link.dart';
 
-/// Scan the QR code printed by `orchestrator pair`, or type the details.
+/// Scan the QR code shown by the desktop app or printed by
+/// `orchestrator pair`, or type the details.
 class PairScreen extends StatefulWidget {
   const PairScreen({super.key});
 
@@ -50,7 +51,7 @@ class _PairScreenState extends State<PairScreen> {
     try {
       if (p.isExpired) {
         throw StateError(
-          'this pairing code has expired; run `orchestrator pair` again',
+          'this pairing code has expired; show a new one on your computer',
         );
       }
       final rec = await AppScope.read(context).pair(p);
@@ -131,7 +132,9 @@ class _PairScreenState extends State<PairScreen> {
                       child: Text(_error!, style: TextStyle(color: cs.error)),
                     ),
                   Text(
-                    'Run `orchestrator pair` on your computer and point the camera at the QR code.',
+                    'Show the pairing code on your computer — the '
+                    'Orchestrator app, or `orchestrator pair` in a terminal — '
+                    'and point the camera at it.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 12),
@@ -237,7 +240,7 @@ class _ManualSheetState extends State<_ManualSheet> {
                 hintText: '192.168.1.20 or <id>.relay.example:443',
                 helperText:
                     'An IP on your network, or the relay name '
-                    '(with its port) that `orchestrator pair` prints.',
+                    '(with its port) shown with the pairing code.',
               ),
               keyboardType: TextInputType.url,
               autocorrect: false,

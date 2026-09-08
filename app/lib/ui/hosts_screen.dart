@@ -81,7 +81,9 @@ class _Empty extends StatelessWidget {
             Text('No hosts yet', style: t.titleLarge),
             const SizedBox(height: 8),
             Text(
-              'On your computer run `orchestrator pair`, then scan the QR code it prints.',
+              'Open Orchestrator on your computer and click "Show pairing '
+              'code", then scan it here. In a terminal, `orchestrator pair` '
+              'prints the same code.',
               textAlign: TextAlign.center,
               style: t.bodyMedium,
             ),
