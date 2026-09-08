@@ -325,3 +325,46 @@ h1 {
   .pulse { animation: none; }
   * { transition: none !important; }
 }
+
+/* --- privacy / document pages --- */
+
+.brand-link { text-decoration: none; }
+
+.doc { padding-block: clamp(2.5rem, 6vw, 4rem) clamp(3rem, 7vw, 5rem); }
+
+.doc-title {
+  font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem);
+  letter-spacing: -.025em;
+  line-height: 1.1;
+}
+
+.doc-lede {
+  margin-top: 1.1rem;
+  max-width: 40rem;
+  color: var(--muted);
+  font-size: clamp(1.0625rem, 1rem + .35vw, 1.15rem);
+}
+
+.doc h2 {
+  margin-top: 2.75rem;
+  font-size: 1.1875rem;
+  letter-spacing: -.012em;
+}
+
+.doc p, .doc ul { margin-top: .9rem; max-width: var(--measure); color: var(--muted); }
+
+.doc ul { padding-left: 1.15rem; }
+.doc li + li { margin-top: .5rem; }
+
+.doc code {
+  font-family: var(--mono);
+  font-size: .875em;
+  color: var(--text);
+}
+
+.doc-link { color: var(--clay); text-underline-offset: 3px; }
+
+.doc-date { margin-top: 2.75rem; font-size: .875rem; }
+
+.foot-link { color: var(--muted); text-underline-offset: 3px; margin-left: .5rem; }
+.foot-link:hover { color: var(--text); }

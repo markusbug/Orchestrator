@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Orc Terminal</title>
+<meta name="description" content="Orc Terminal has no accounts and collects nothing about you. What the app stores, what the relay can see, and how long anything is kept.">
+<link rel="canonical" href="https://orc.markushaas.com/privacy">
+<meta name="theme-color" content="#131820">
+<meta name="robots" content="index, follow">
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand brand-link" href="/">
+      <svg class="mark" viewBox="0 0 64 64" role="img" aria-label="Orc Terminal">
+        <rect width="64" height="64" rx="15" fill="#D97757"/>
+        <path d="M18 19 L31 32 L18 45" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="square"/>
+        <rect x="35" y="39" width="14" height="6.5" fill="#fff"/>
+      </svg>
+      <span class="brand-name">Orc Terminal</span>
+    </a>
+    <a class="topbar-link" href="/">Back to the site</a>
+  </div>
+</header>
+
+<main id="main" class="doc wrap">
+
+  <h1 class="doc-title">Privacy</h1>
+  <p class="doc-lede">Orc Terminal has no accounts and collects nothing about you. Your
+     sessions run on your own computer; the app is a remote control for them.</p>
+
+  <h2>What the app keeps, and where</h2>
+  <p>All of this stays on your phone and is never sent anywhere:</p>
+  <ul>
+    <li>The key that identifies your phone to your computer — an Ed25519 key generated in
+        the iOS Keychain or Android Keystore, marked device-only, so it is not carried in
+        a backup and cannot be restored onto a different phone.</li>
+    <li>The computers you have paired: their names, addresses and certificate
+        fingerprints.</li>
+    <li>Your settings — font size, theme, key bar order, and the name this device
+        reports.</li>
+  </ul>
+  <p>Deleting the app deletes all of it.</p>
+
+  <h2>Your sessions and their output</h2>
+  <p>Everything a session prints lives on your own computer, inside the Orchestrator
+     service you installed there. The app displays that output; it does not store it,
+     copy it, or send it anywhere else.</p>
+
+  <h2>Camera</h2>
+  <p>Used for one thing: scanning the pairing QR code your own computer shows. Nothing is
+     recorded, saved or transmitted, and the camera is not used anywhere else in the app.</p>
+
+  <h2>Notifications</h2>
+  <p>Notifications are generated locally, on your phone, by the app itself. There is no
+     push service — nothing about your sessions is sent to Apple, Google, or anyone else
+     in order to notify you.</p>
+
+  <h2>The relay</h2>
+  <p>By default your phone reaches your computer through <code>relay.markushaas.com</code>,
+     which I run. It exists so that you never have to forward a port or run a VPN.</p>
+  <p><strong>It cannot read your traffic.</strong> The connection is encrypted end to end
+     with your own computer's certificate, which the app pins; the relay copies bytes it
+     holds no key to decrypt.</p>
+  <p>What it can see, and does log: which host identifiers are online, when connections
+     start and end, and how many bytes pass through. A host identifier is a random
+     128-bit value derived from your computer's own key — it is not tied to a name, an
+     email address or an account, because there are none. These logs sit on the server
+     for at most 14 days and are then discarded. They are not shared with anyone, and
+     they are not used for analytics or profiling.</p>
+  <p>You can avoid the relay entirely. Running <code>orchestrator relay off</code> on your
+     computer turns it off, and the app keeps working over your local network or
+     Tailscale.</p>
+
+  <h2>What there is none of</h2>
+  <p>No analytics, no crash reporting, no advertising identifiers, no third-party SDKs of
+     any kind, and no account to create. Nothing is sold or shared with anyone, because
+     nothing is gathered in the first place.</p>
+
+  <h2>Children</h2>
+  <p>Orc Terminal is a developer tool and is not directed at children.</p>
+
+  <h2>Changes</h2>
+  <p>If any of the above stops being true, this page changes and so does the date below.</p>
+
+  <h2>Questions</h2>
+  <p><a class="doc-link" href="mailto:hm.orc@protonmail.ch?subject=Orc%20Terminal%20privacy">Email
+     me</a> and I will answer.</p>
+
+  <p class="doc-date">Last updated 8 September 2026.</p>
+
+</main>
+
+<footer class="wrap site-foot">
+  <p>Orc Terminal is the phone half of Orchestrator. Built by Markus Haas.</p>
+</footer>
+
+</body>
+</html>
