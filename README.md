@@ -19,6 +19,9 @@ left it, still working.
 Install the app on the computer you want to reach, install the app on your phone, scan
 one QR code. That is the whole setup.
 
+The phone app is called **Orc Terminal**; <https://orc.markushaas.com> is the short
+version of all of the above, and where to ask for access.
+
 ## Install
 
 > **While this repository is private**, the one-liner and the release links below
@@ -74,10 +77,11 @@ Not yet. The daemon has no ConPTY support, so the machine side is Unix-only toda
 
 ### Your phone
 
-- **iOS** — there is no App Store listing. Each `app-v*` tag builds an unsigned IPA in
-  GitHub Actions which you sideload; [MVP.md](MVP.md) has the steps. The same tag can
-  also ship a signed build to TestFlight once the paid Apple Developer Program and the
-  signing secrets are in place — see [docs/TESTFLIGHT.md](docs/TESTFLIGHT.md).
+- **iOS** — **Orc Terminal** is on TestFlight, first signed build `app-v0.1.5`. There is
+  no App Store listing, and no public TestFlight link: access is by invitation, so ask at
+  <https://orc.markushaas.com>. Every `app-v*` tag builds both the signed TestFlight
+  upload ([docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)) and an unsigned IPA you can sideload
+  instead ([MVP.md](MVP.md) has those steps).
 - **Android** — debug builds only so far.
 
 ## First run
@@ -99,11 +103,12 @@ see, and how to report a vulnerability.
 ## Status
 
 Working end to end: the daemon (Go, `daemon/`) on Ubuntu, the desktop app (Flutter,
-`app/`) released as `desktop-v0.1.0`, the iOS app sideloaded from `app-v0.1.3`, and the
-hosted relay at `relay.markushaas.com`, verified on 2026-09-06 with an iPhone on
-cellular. Not yet proven: the macOS app on real hardware, and Windows at all. See
-[PLAN.md](PLAN.md) for the architecture and milestones, [MVP.md](MVP.md) for scope, and
-[docs/DESKTOP.md](docs/DESKTOP.md) for how the desktop app is built and packaged.
+`app/`) released as `desktop-v0.1.0`, the iOS app — sideloaded from `app-v0.1.3` and on
+TestFlight from `app-v0.1.5` — and the hosted relay at `relay.markushaas.com`, verified
+on 2026-09-06 with an iPhone on cellular. Not yet proven: the macOS app on real
+hardware, and Windows at all. See [PLAN.md](PLAN.md) for the architecture and
+milestones, [MVP.md](MVP.md) for scope, and [docs/DESKTOP.md](docs/DESKTOP.md) for how
+the desktop app is built and packaged.
 
 ## Developing the daemon
 
