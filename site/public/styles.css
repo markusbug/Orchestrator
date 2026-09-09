@@ -386,7 +386,7 @@ h1 {
   padding: 0;
   display: grid;
   gap: 1.25rem;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
 }
 
 .dl-list li { display: flex; flex-direction: column; gap: .6rem; }
@@ -413,6 +413,10 @@ h1 {
     gap: clamp(2.5rem, 5vw, 4.5rem);
   }
 }
+
+/* Grid items default to min-width:auto, so a long unbreakable child (the
+   install command) makes the whole column refuse to shrink. */
+.get-col { min-width: 0; }
 
 .get-col h3 {
   display: flex;
@@ -449,27 +453,30 @@ h1 {
 .cmd {
   margin-top: 1.15rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: .75rem;
+  gap: .6rem .75rem;
+  min-width: 0;
   background: var(--ink);
   border: 1px solid var(--rule);
   border-radius: 8px;
-  padding: .65rem .65rem .65rem .9rem;
+  padding: .7rem .7rem .7rem .9rem;
 }
 
 .cmd code {
-  flex: 1 1 auto;
+  flex: 1 1 14rem;
   min-width: 0;
-  overflow-x: auto;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-family: var(--mono);
   font-size: .8rem;
+  line-height: 1.5;
   color: var(--text);
-  scrollbar-width: thin;
 }
 
 .cmd-copy {
   flex: none;
+  margin-left: auto;
   font-family: var(--sans);
   font-size: .78rem;
   font-weight: 600;
@@ -485,6 +492,6 @@ h1 {
 .cmd-copy.is-done { color: var(--moss); border-color: var(--moss); }
 
 /* Two phone buttons read better side by side than stretched across the column. */
-.dl-phone { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+.dl-phone { grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); }
 
 .dl-note strong { color: var(--text); font-weight: 600; }
