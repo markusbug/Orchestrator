@@ -376,77 +376,66 @@ h1 {
 .cta-alt { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--rule); }
 .cta-alt:hover { color: var(--text); border-bottom-color: var(--clay); }
 
-.dl-wrap h2 { font-size: clamp(1.45rem, 1.2rem + 1vw, 1.95rem); letter-spacing: -.02em; }
-
-.dl-lede { margin-top: 1rem; max-width: var(--measure); color: var(--muted); }
-
-.dl-list {
-  list-style: none;
-  margin: 2rem 0 0;
-  padding: 0;
-  display: grid;
-  gap: 1.25rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(14rem, 100%), 1fr));
-}
-
-.dl-list li { display: flex; flex-direction: column; gap: .6rem; }
-
-.dl-list .button { text-align: center; }
-
 .dl-meta { font-family: var(--mono); font-size: .78rem; color: var(--muted); }
+.dl-meta a { text-decoration: none; border-bottom: 1px solid var(--rule); }
+.dl-meta a:hover { border-bottom-color: var(--clay); }
 
-.dl-note { margin-top: 1.5rem; max-width: var(--measure); color: var(--muted); font-size: .9rem; }
-.dl-note a { border-bottom: 1px solid var(--rule); text-decoration: none; }
-.dl-note a:hover { border-bottom-color: var(--clay); }
+/* --- get: the two installs, one panel each, one action each --- */
 
-/* --- get: the two installs --- */
+.get-wrap h2 { font-size: clamp(1.45rem, 1.2rem + 1vw, 1.95rem); letter-spacing: -.02em; }
+
+.get-lede { margin-top: 1rem; max-width: var(--measure); color: var(--muted); }
 
 .get-cols {
   margin-top: 2.25rem;
   display: grid;
-  gap: 2.75rem;
+  gap: 1.25rem;
 }
 
 @media (min-width: 62rem) {
-  .get-cols {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: clamp(2.5rem, 5vw, 4.5rem);
-  }
+  .get-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
 }
 
 /* Grid items default to min-width:auto, so a long unbreakable child (the
    install command) makes the whole column refuse to shrink. */
-.get-col { min-width: 0; }
+.get-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: clamp(1.25rem, 3vw, 1.75rem);
+}
 
-.get-col h3 {
+.get-step {
   display: flex;
   align-items: center;
-  gap: .65rem;
-  font-size: 1.0625rem;
+  gap: .7rem;
+  font-size: 1.1875rem;
+  font-weight: 600;
   letter-spacing: -.012em;
 }
 
 .get-num {
   flex: none;
-  width: 1.65rem;
-  height: 1.65rem;
+  width: 1.75rem;
+  height: 1.75rem;
   display: grid;
   place-items: center;
-  border: 1px solid var(--rule);
+  background: var(--clay);
+  color: #14181e;
   border-radius: 50%;
   font-family: var(--mono);
-  font-size: .78rem;
-  color: var(--clay);
+  font-size: .8rem;
+  font-weight: 700;
 }
 
-.get-note {
-  margin-top: .9rem;
-  max-width: var(--measure);
-  color: var(--muted);
-  font-size: .9rem;
+@media (prefers-color-scheme: light) {
+  .get-num { color: #fff; }
 }
 
-.get-note code { font-family: var(--mono); font-size: .875em; color: var(--text); }
+.get-sub { margin-top: .6rem; color: var(--muted); }
 
 /* The install one-liner. Long enough to scroll on a phone, so the copy button
    sits outside the scrolling area rather than off the end of it. */
@@ -457,10 +446,10 @@ h1 {
   align-items: center;
   gap: .6rem .75rem;
   min-width: 0;
-  background: var(--ink);
+  background: var(--raised);
   border: 1px solid var(--rule);
   border-radius: 8px;
-  padding: .7rem .7rem .7rem .9rem;
+  padding: .75rem .75rem .75rem 1rem;
 }
 
 .cmd code {
@@ -469,8 +458,8 @@ h1 {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: var(--mono);
-  font-size: .8rem;
-  line-height: 1.5;
+  font-size: .8125rem;
+  line-height: 1.55;
   color: var(--text);
 }
 
@@ -478,20 +467,76 @@ h1 {
   flex: none;
   margin-left: auto;
   font-family: var(--sans);
-  font-size: .78rem;
+  font-size: .8125rem;
   font-weight: 600;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--rule);
-  border-radius: 5px;
-  padding: .38rem .7rem;
+  color: #14181e;
+  background: var(--clay);
+  border: 0;
+  border-radius: 6px;
+  padding: .5rem .95rem;
   cursor: pointer;
 }
 
-.cmd-copy:hover { color: var(--text); border-color: var(--clay); }
-.cmd-copy.is-done { color: var(--moss); border-color: var(--moss); }
+.cmd-copy:hover { background: #e08a6d; }
+.cmd-copy.is-done { background: var(--moss); }
 
-/* Two phone buttons read better side by side than stretched across the column. */
-.dl-phone { grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr)); }
+@media (prefers-color-scheme: light) {
+  .cmd-copy { color: #fff; }
+  .cmd-copy:hover { background: #a1462a; }
+}
 
-.dl-note strong { color: var(--text); font-weight: 600; }
+.get-alt {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .9rem;
+  color: var(--muted);
+  font-size: .9rem;
+}
+.get-alt a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.get-alt a:hover { border-bottom-color: var(--clay); }
+
+.get-stores {
+  list-style: none;
+  margin: 1.15rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+}
+
+.get-stores li { display: flex; flex-direction: column; gap: .55rem; }
+
+.get-stores .button { text-align: center; }
+
+/* Caveats stay out of the way until someone needs them. */
+.get-more {
+  margin-top: 1.25rem;
+  font-size: .875rem;
+  color: var(--muted);
+}
+
+.get-more summary {
+  display: inline-block;
+  cursor: pointer;
+  color: var(--muted);
+  border-bottom: 1px solid var(--rule);
+  list-style: none;
+}
+.get-more summary::-webkit-details-marker { display: none; }
+.get-more summary::before { content: "+\00a0"; font-family: var(--mono); }
+.get-more[open] summary::before { content: "\2212\00a0"; }
+.get-more summary:hover { color: var(--text); border-bottom-color: var(--clay); }
+
+.get-more ul { margin: .9rem 0 0; padding-left: 1.1rem; }
+.get-more li + li { margin-top: .5rem; }
+
+.get-more code { font-family: var(--mono); font-size: .875em; color: var(--text); }
+.get-more strong { color: var(--text); font-weight: 600; }
+.get-more a { text-decoration: none; border-bottom: 1px solid var(--rule); }
+.get-more a:hover { border-bottom-color: var(--clay); }

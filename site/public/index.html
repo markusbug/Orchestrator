@@ -191,78 +191,76 @@
   </section>
 
   <section id="get" class="band">
-    <div class="wrap dl-wrap">
-      <h2>Two installs, and you need both</h2>
-      <p class="dl-lede">They are not alternatives. The desktop app goes on the computer you
-         want to reach — that is where Claude Code actually runs. The phone app is the remote
-         control. The computer shows a QR code, the phone scans it, and that is the setup.</p>
+    <div class="wrap get-wrap">
+      <h2>Get Orc Terminal</h2>
+      <p class="get-lede">One install on the computer Claude&nbsp;Code runs on, one on your
+         phone. Then scan the QR code the computer shows, and you are done.</p>
 
       <div class="get-cols">
 
         <div class="get-col">
-          <h3><span class="get-num">1</span> On your computer</h3>
-          <p class="get-note">Linux or macOS, with Claude&nbsp;Code already installed. Your
-             files stay here and the sessions keep running here.</p>
+          <p class="get-step"><span class="get-num">1</span>On your computer</p>
+          <p class="get-sub">Linux or macOS, with Claude&nbsp;Code already installed.
+             Paste this into a terminal:</p>
 
           <div class="cmd" data-cmd="curl -fsSL https://raw.githubusercontent.com/markusbug/Orchestrator/main/scripts/install.sh | sh">
             <code>curl -fsSL https://raw.githubusercontent.com/markusbug/Orchestrator/main/scripts/install.sh | sh</code>
             <button class="cmd-copy" type="button" aria-label="Copy the install command">Copy</button>
           </div>
-          <p class="get-note">Installs the <code>.deb</code> if you have <code>dpkg</code>,
-             the AppImage otherwise. On a server with no desktop, end it with
-             <code>sh -s -- --headless</code> to install just the background service. Or
-             take the file directly:</p>
 
-          <ul class="dl-list">
-            <li>
-              <a class="button" href="/download/orchestrator_0.1.1_amd64.deb.zip">Linux &middot; .deb</a>
-              <span class="dl-meta">Debian, Ubuntu &middot; x86-64 &middot; 15.5&nbsp;MB zipped</span>
-            </li>
-            <li>
-              <a class="button" href="/download/Orchestrator-0.1.1-x86_64.AppImage.zip">Linux &middot; AppImage</a>
-              <span class="dl-meta">Any distribution &middot; x86-64 &middot; 15.6&nbsp;MB zipped</span>
-            </li>
-            <li>
-              <a class="button" href="/download/Orchestrator-0.1.1-arm64.dmg.zip">macOS &middot; .dmg</a>
-              <span class="dl-meta">Apple silicon &middot; 28.3&nbsp;MB zipped</span>
-            </li>
-          </ul>
-          <p class="dl-note">Each file is zipped; unzip it before installing, and give the
-             AppImage the execute bit (<code>chmod +x</code>) once. Verify with
-             <a href="/download/SHA256SUMS">SHA256SUMS</a>, which covers the zips as
-             downloaded. The macOS build is signed ad-hoc rather than notarised, so
-             Gatekeeper will ask you to allow it the first time. There is no Windows build
-             yet.</p>
+          <p class="get-alt"><span>Or download the installer:</span>
+             <a href="/download/orchestrator_0.1.1_amd64.deb.zip">Linux .deb</a>
+             <a href="/download/Orchestrator-0.1.1-x86_64.AppImage.zip">Linux AppImage</a>
+             <a href="/download/Orchestrator-0.1.1-arm64.dmg.zip">macOS .dmg</a></p>
+
+          <details class="get-more">
+            <summary>Details</summary>
+            <ul>
+              <li>The script installs the <code>.deb</code> where <code>dpkg</code> exists
+                  and the AppImage otherwise. On a server with no desktop, end it with
+                  <code>sh -s -- --headless</code> to get just the background service.</li>
+              <li>Direct downloads are x86-64 for Linux and Apple silicon for macOS, zipped.
+                  Unzip first, and give the AppImage the execute bit
+                  (<code>chmod +x</code>) once. Checksums are in
+                  <a href="/download/SHA256SUMS">SHA256SUMS</a>.</li>
+              <li>The macOS build is signed ad-hoc rather than notarised, so Gatekeeper asks
+                  you to allow it the first time.</li>
+              <li>No Windows build yet.</li>
+            </ul>
+          </details>
         </div>
 
         <div class="get-col">
-          <h3><span class="get-num">2</span> On your phone</h3>
-          <p class="get-note">The remote control, and no use on its own — install the
-             desktop app first, then scan the QR code it shows you.</p>
+          <p class="get-step"><span class="get-num">2</span>On your phone</p>
+          <p class="get-sub">Open it once the desktop app is running and scan the QR code
+             it shows you.</p>
 
-          <ul class="dl-list dl-phone">
+          <ul class="get-stores">
             <li>
-              <a class="button" href="https://testflight.apple.com/join/usdtauzR">iPhone &middot; TestFlight</a>
-              <span class="dl-meta">Public beta &middot; no invite needed</span>
+              <a class="button" href="https://testflight.apple.com/join/usdtauzR">iPhone</a>
+              <span class="dl-meta">TestFlight &middot; public beta</span>
             </li>
             <li>
-              <a class="button" href="https://play.google.com/apps/testing/io.freedomfactory.orchestrator">Android &middot; Google Play</a>
-              <span class="dl-meta">Closed test &middot; join the <a href="https://groups.google.com/g/orc-terminal-testers">tester group</a> first</span>
+              <a class="button" href="https://play.google.com/apps/testing/io.freedomfactory.orchestrator">Android</a>
+              <span class="dl-meta">Google Play &middot; join the <a href="https://groups.google.com/g/orc-terminal-testers">tester group</a> first</span>
             </li>
           </ul>
 
-          <p class="dl-note"><strong>iPhone:</strong> open the TestFlight link and you are in
-             — no invitation, no email. Each new version has to clear Apple's beta review
-             first, which takes about a day; if the link says the beta is not accepting
-             testers, that is a review in progress rather than a full tester list, so try
-             again shortly.</p>
-          <p class="dl-note"><strong>Android:</strong> Play only lets a new app out through a
-             closed test, and a closed test needs a tester list. Anyone can put themselves on
-             it: join the <a href="https://groups.google.com/g/orc-terminal-testers">Orc
-             Terminal testers</a> group with the Google account you use on Play, then open
-             the Play link above and tap <em>Become a tester</em>. After that Play offers
-             the app like any other, updates included. If the Play page says the app is not
-             available yet, Google is still reviewing the build; try again the next day.</p>
+          <details class="get-more">
+            <summary>Details</summary>
+            <ul>
+              <li><strong>iPhone:</strong> each new version waits about a day for Apple's
+                  beta review. If TestFlight says the beta is not accepting testers, that
+                  is a review in progress, so try again shortly.</li>
+              <li><strong>Android:</strong> Play only releases a new app through a closed
+                  test with a tester list, and anyone can join it. Join the
+                  <a href="https://groups.google.com/g/orc-terminal-testers">Orc Terminal
+                  testers</a> group with the Google account you use on Play, open the Play
+                  link, and tap <em>Become a tester</em>. From then on Play treats it like
+                  any other app, updates included. If Play says the app is not available
+                  yet, Google is still reviewing the build; try again the next day.</li>
+            </ul>
+          </details>
         </div>
 
       </div>

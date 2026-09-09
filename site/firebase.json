@@ -19,7 +19,7 @@
         ]
       },
       {
-        "source": "**/*.html",
+        "source": "**/*.@(html|css)",
         "headers": [
           {
             "key": "Cache-Control",
@@ -28,7 +28,7 @@
         ]
       },
       {
-        "source": "**/*.@(css|png|svg|woff2)",
+        "source": "**/*.@(png|svg|woff2)",
         "headers": [
           {
             "key": "Cache-Control",
