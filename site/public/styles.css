@@ -398,3 +398,93 @@ h1 {
 .dl-note { margin-top: 1.5rem; max-width: var(--measure); color: var(--muted); font-size: .9rem; }
 .dl-note a { border-bottom: 1px solid var(--rule); text-decoration: none; }
 .dl-note a:hover { border-bottom-color: var(--clay); }
+
+/* --- get: the two installs --- */
+
+.get-cols {
+  margin-top: 2.25rem;
+  display: grid;
+  gap: 2.75rem;
+}
+
+@media (min-width: 62rem) {
+  .get-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(2.5rem, 5vw, 4.5rem);
+  }
+}
+
+.get-col h3 {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  font-size: 1.0625rem;
+  letter-spacing: -.012em;
+}
+
+.get-num {
+  flex: none;
+  width: 1.65rem;
+  height: 1.65rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--clay);
+}
+
+.get-note {
+  margin-top: .9rem;
+  max-width: var(--measure);
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.get-note code { font-family: var(--mono); font-size: .875em; color: var(--text); }
+
+/* The install one-liner. Long enough to scroll on a phone, so the copy button
+   sits outside the scrolling area rather than off the end of it. */
+.cmd {
+  margin-top: 1.15rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  background: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: .65rem .65rem .65rem .9rem;
+}
+
+.cmd code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: .8rem;
+  color: var(--text);
+  scrollbar-width: thin;
+}
+
+.cmd-copy {
+  flex: none;
+  font-family: var(--sans);
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: .38rem .7rem;
+  cursor: pointer;
+}
+
+.cmd-copy:hover { color: var(--text); border-color: var(--clay); }
+.cmd-copy.is-done { color: var(--moss); border-color: var(--moss); }
+
+/* Two phone buttons read better side by side than stretched across the column. */
+.dl-phone { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }
+
+.dl-note strong { color: var(--text); font-weight: 600; }

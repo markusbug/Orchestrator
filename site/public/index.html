@@ -40,8 +40,7 @@
       <span class="brand-name">Orc Terminal</span>
     </span>
     <span class="topbar-links">
-      <a class="topbar-link" href="#download">Download</a>
-      <a class="topbar-link" href="#access">Request early access</a>
+      <a class="topbar-link" href="#get">Get it</a>
     </span>
   </div>
 </header>
@@ -57,8 +56,8 @@
         Come back an hour later and the terminal is exactly where you left it, still working.
       </p>
       <p class="cta-row">
-        <a class="button" href="mailto:hm.orc@protonmail.ch?subject=Orc%20Terminal%20early%20access">Request early access</a>
-        <a class="cta-alt" href="#download">or download the desktop app</a>
+        <a class="button" href="#get">Get Orc Terminal</a>
+        <span class="dl-meta">Linux &middot; macOS &middot; iPhone &middot; Android</span>
       </p>
     </div>
 
@@ -191,44 +190,89 @@
     </div>
   </section>
 
-  <section id="download" class="band">
+  <section id="get" class="band">
     <div class="wrap dl-wrap">
-      <h2>Get the desktop app</h2>
-      <p class="dl-lede">Version 0.1.0, for the computer you want to reach. It installs the
-         Orchestrator service and a small window that shows the pairing QR code, the paired
-         devices, and one switch to turn it off.</p>
-      <ul class="dl-list">
-        <li>
-          <a class="button" href="/download/orchestrator_0.1.0_amd64.deb.zip">Linux &middot; .deb</a>
-          <span class="dl-meta">Debian, Ubuntu &middot; x86-64 &middot; 15.5&nbsp;MB zipped</span>
-        </li>
-        <li>
-          <a class="button" href="/download/Orchestrator-0.1.0-x86_64.AppImage.zip">Linux &middot; AppImage</a>
-          <span class="dl-meta">Any distribution &middot; x86-64 &middot; 15.6&nbsp;MB zipped</span>
-        </li>
-        <li>
-          <a class="button" href="/download/Orchestrator-0.1.0-arm64.dmg.zip">macOS &middot; .dmg</a>
-          <span class="dl-meta">Apple silicon &middot; 28.3&nbsp;MB zipped</span>
-        </li>
-      </ul>
-      <p class="dl-note">Each file is zipped; unzip it before installing, and give the
-         AppImage the execute bit (<code>chmod +x</code>) once. Verify with
-         <a href="/download/SHA256SUMS">SHA256SUMS</a>, which covers the zips as downloaded.
-         The macOS build is signed ad-hoc rather than notarised, so Gatekeeper will ask you
-         to allow it the first time. There is no Windows build yet.</p>
-      <p class="dl-note">The phone app is still invite-only, and the desktop app has nothing
-         to pair with on its own — <a href="#access">ask for access</a> and the iPhone or
-         Android link comes back with it.</p>
+      <h2>Two installs, and you need both</h2>
+      <p class="dl-lede">They are not alternatives. The desktop app goes on the computer you
+         want to reach — that is where Claude Code actually runs. The phone app is the remote
+         control. The computer shows a QR code, the phone scans it, and that is the setup.</p>
+
+      <div class="get-cols">
+
+        <div class="get-col">
+          <h3><span class="get-num">1</span> On your computer</h3>
+          <p class="get-note">Linux or macOS, with Claude&nbsp;Code already installed. Your
+             files stay here and the sessions keep running here.</p>
+
+          <div class="cmd" data-cmd="curl -fsSL https://raw.githubusercontent.com/markusbug/Orchestrator/main/scripts/install.sh | sh">
+            <code>curl -fsSL https://raw.githubusercontent.com/markusbug/Orchestrator/main/scripts/install.sh | sh</code>
+            <button class="cmd-copy" type="button" aria-label="Copy the install command">Copy</button>
+          </div>
+          <p class="get-note">Installs the <code>.deb</code> if you have <code>dpkg</code>,
+             the AppImage otherwise. On a server with no desktop, end it with
+             <code>sh -s -- --headless</code> to install just the background service. Or
+             take the file directly:</p>
+
+          <ul class="dl-list">
+            <li>
+              <a class="button" href="/download/orchestrator_0.1.0_amd64.deb.zip">Linux &middot; .deb</a>
+              <span class="dl-meta">Debian, Ubuntu &middot; x86-64 &middot; 15.5&nbsp;MB zipped</span>
+            </li>
+            <li>
+              <a class="button" href="/download/Orchestrator-0.1.0-x86_64.AppImage.zip">Linux &middot; AppImage</a>
+              <span class="dl-meta">Any distribution &middot; x86-64 &middot; 15.6&nbsp;MB zipped</span>
+            </li>
+            <li>
+              <a class="button" href="/download/Orchestrator-0.1.0-arm64.dmg.zip">macOS &middot; .dmg</a>
+              <span class="dl-meta">Apple silicon &middot; 28.3&nbsp;MB zipped</span>
+            </li>
+          </ul>
+          <p class="dl-note">Each file is zipped; unzip it before installing, and give the
+             AppImage the execute bit (<code>chmod +x</code>) once. Verify with
+             <a href="/download/SHA256SUMS">SHA256SUMS</a>, which covers the zips as
+             downloaded. The macOS build is signed ad-hoc rather than notarised, so
+             Gatekeeper will ask you to allow it the first time. There is no Windows build
+             yet.</p>
+        </div>
+
+        <div class="get-col">
+          <h3><span class="get-num">2</span> On your phone</h3>
+          <p class="get-note">The remote control, and no use on its own — install the
+             desktop app first, then scan the QR code it shows you.</p>
+
+          <ul class="dl-list dl-phone">
+            <li>
+              <a class="button" href="https://testflight.apple.com/join/usdtauzR">iPhone &middot; TestFlight</a>
+              <span class="dl-meta">Public beta &middot; no invite needed</span>
+            </li>
+            <li>
+              <a class="button" href="mailto:hm.orc@protonmail.ch?subject=Orc%20Terminal%20on%20Android">Android &middot; ask me</a>
+              <span class="dl-meta">Play internal testing</span>
+            </li>
+          </ul>
+
+          <p class="dl-note"><strong>iPhone:</strong> open the TestFlight link and you are in
+             — no invitation, no email. Each new version has to clear Apple's beta review
+             first, which takes about a day; if the link says the beta is not accepting
+             testers, that is a review in progress rather than a full tester list, so try
+             again shortly.</p>
+          <p class="dl-note"><strong>Android:</strong> the app is on Play's internal testing
+             track while the open test is being set up, and internal testing works by
+             account. Send me the Google account you use for Play and I will add you — then
+             Play offers the app like any other.</p>
+        </div>
+
+      </div>
     </div>
   </section>
 
   <section id="access" class="closing">
     <div class="wrap">
-      <h2>Want in?</h2>
-      <p>Send me a line about what you would use it for. I am letting people in a few
-         at a time.</p>
+      <h2>Anything else</h2>
+      <p>Android access, something broken, or a question about whether this fits the way you
+         work. I read everything, and 0.1 means you will find things.</p>
       <p class="cta-row">
-        <a class="button" href="mailto:hm.orc@protonmail.ch?subject=Orc%20Terminal%20early%20access">Request early access</a>
+        <a class="button" href="mailto:hm.orc@protonmail.ch?subject=Orc%20Terminal">hm.orc@protonmail.ch</a>
       </p>
     </div>
   </section>
@@ -239,6 +283,29 @@
   <p>Orc Terminal is the phone half of Orchestrator. Built by Markus Haas.
      <a class="foot-link" href="/privacy">Privacy</a></p>
 </footer>
+
+<script>
+// Copy button on the install command. Progressive enhancement: without JS or
+// clipboard access the command is still there to select by hand.
+document.querySelectorAll('.cmd').forEach(function (box) {
+  var btn = box.querySelector('.cmd-copy');
+  var code = box.querySelector('code');
+  if (!btn || !code || !navigator.clipboard) { if (btn) btn.hidden = true; return; }
+  btn.addEventListener('click', function () {
+    navigator.clipboard.writeText(box.dataset.cmd || code.textContent).then(function () {
+      btn.textContent = 'Copied';
+      btn.classList.add('is-done');
+      setTimeout(function () {
+        btn.textContent = 'Copy';
+        btn.classList.remove('is-done');
+      }, 2000);
+    }, function () {
+      btn.textContent = 'Press \u2318C';
+      setTimeout(function () { btn.textContent = 'Copy'; }, 2000);
+    });
+  });
+});
+</script>
 
 </body>
 </html>
