@@ -7,7 +7,7 @@ RELAY_VERSION ?= $(shell (git describe --tags --match 'relay-v*' --always --dirt
 RELAY_LDFLAGS := -s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=$(RELAY_VERSION)
 LOAD_HOSTS ?= 1000
 # Desktop release whose installers the landing page offers for download.
-DESKTOP_TAG ?= desktop-v0.1.0
+DESKTOP_TAG ?= desktop-v0.1.1
 
 FLUTTER ?= flutter
 

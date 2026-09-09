@@ -91,7 +91,7 @@ api.github.com, not a missing release.
 
 Pick a tag from https://github.com/$REPO/releases and pass it:
 
-  curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | sh -s -- --version desktop-v0.1.0"
+  curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | sh -s -- --version desktop-v0.1.1"
 	fi
 fi
 BASE="https://github.com/$REPO/releases/download/$VERSION"
