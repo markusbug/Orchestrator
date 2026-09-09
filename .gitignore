@@ -38,3 +38,16 @@ bin/
 # firebase CLI
 firebase-debug.log
 site/.firebase/
+
+# Store automation and session notes: kept locally, not committed. They read
+# credentials from outside the repo (App Store Connect .p8, Play service
+# account JSON) and are tied to one developer's accounts.
+scripts/asc.py
+scripts/play.py
+WORKLOG.md
+__pycache__/
+
+# Desktop installers the landing page serves. Fetched from the GitHub release by
+# `make site-installers`, never committed: they are 60 MB and already versioned
+# by the release tag.
+site/public/download/

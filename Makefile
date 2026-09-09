@@ -6,10 +6,12 @@ LDFLAGS := -s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.
 RELAY_VERSION ?= $(shell (git describe --tags --match 'relay-v*' --always --dirty 2>/dev/null || echo dev) | sed 's/^relay-//')
 RELAY_LDFLAGS := -s -w -X github.com/markusbug/Orchestrator/daemon/internal/buildinfo.Version=$(RELAY_VERSION)
 LOAD_HOSTS ?= 1000
+# Desktop release whose installers the landing page offers for download.
+DESKTOP_TAG ?= desktop-v0.1.0
 
 FLUTTER ?= flutter
 
-.PHONY: build test race vet xcompile run-debug clean app-check app-live build-relay build-relay-linux run-relay-dev relay-load desktop-run desktop-build desktop-package
+.PHONY: build test race vet xcompile run-debug clean app-check app-live build-relay build-relay-linux run-relay-dev relay-load desktop-run desktop-build desktop-package site-installers deploy-site
 
 build: ## build daemon binary into bin/
 	cd daemon && go build -ldflags '$(LDFLAGS)' -o ../bin/orchestrator ./cmd/orchestrator
@@ -57,7 +59,24 @@ relay-load: ## open LOAD_HOSTS fake hosts against the local dev relay (see cmd/r
 site-preview: ## serve site/public at http://127.0.0.1:8712 (Ctrl-C to stop)
 	cd site/public && python3 -m http.server 8712
 
-deploy-site: ## publish site/ to orc.markushaas.com (needs: firebase login)
+# The installers are zipped because Firebase Hosting's Spark plan refuses to serve
+# executable files; the release's own sums are verified before wrapping.
+site-installers: ## fetch and zip the desktop installers the landing page serves (gitignored)
+	@mkdir -p site/public/download
+	@if [ -f site/public/download/SHA256SUMS ] && \
+	    (cd site/public/download && sha256sum -c SHA256SUMS >/dev/null 2>&1); then \
+	  echo "installers present and verified"; \
+	else \
+	  gh release download $(DESKTOP_TAG) --dir site/public/download --clobber \
+	    -p '*.deb' -p '*.AppImage' -p '*.dmg' -p 'SHA256SUMS*' && \
+	  cd site/public/download && \
+	  grep -h -E '\.deb|\.AppImage|\.dmg' SHA256SUMS SHA256SUMS.macos > verify.tmp && \
+	  sha256sum -c verify.tmp && rm -f verify.tmp SHA256SUMS.macos && \
+	  for f in *.deb *.AppImage *.dmg; do zip -q -j "$$f.zip" "$$f" && rm -f "$$f"; done && \
+	  sha256sum *.zip > SHA256SUMS && sha256sum -c SHA256SUMS; \
+	fi
+
+deploy-site: site-installers ## publish site/ to orc.markushaas.com (needs: firebase login)
 	cd site && firebase deploy --only hosting:orc
 
 clean:

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orc Terminal — drive Claude Code from your phone</title>
-<meta name="description" content="Claude Code runs on your laptop. Orc Terminal lets you start, watch and answer those sessions from your iPhone. No port forwarding, no VPN, no cloud.">
+<meta name="description" content="Claude Code runs on your laptop. Orc Terminal lets you start, watch and answer those sessions from your iPhone or Android phone. No port forwarding, no VPN, no cloud.">
 <link rel="canonical" href="https://orc.markushaas.com/">
 <meta name="theme-color" content="#131820">
 
@@ -39,7 +39,10 @@
       </svg>
       <span class="brand-name">Orc Terminal</span>
     </span>
-    <a class="topbar-link" href="#access">Request early access</a>
+    <span class="topbar-links">
+      <a class="topbar-link" href="#download">Download</a>
+      <a class="topbar-link" href="#access">Request early access</a>
+    </span>
   </div>
 </header>
 
@@ -55,6 +58,7 @@
       </p>
       <p class="cta-row">
         <a class="button" href="mailto:hm.orc@protonmail.ch?subject=Orc%20Terminal%20early%20access">Request early access</a>
+        <a class="cta-alt" href="#download">or download the desktop app</a>
       </p>
     </div>
 
@@ -120,7 +124,7 @@
         </li>
         <li>
           <span class="step-n">2</span>
-          <p>Install Orc Terminal on your iPhone.</p>
+          <p>Install Orc Terminal on your iPhone or Android phone.</p>
         </li>
         <li>
           <span class="step-n">3</span>
@@ -178,10 +182,43 @@
   <section class="wrap prose">
     <h2>Where it is right now</h2>
     <div class="prose-body">
-    <p>Version 0.1, and honestly beta. The machine side runs on Linux and macOS; the phone
-       side is iPhone. Windows is not supported yet, and neither is Android. It has been
-       driven end to end from a phone on cellular, and it is what I use every day — but
-       early access means you are testing it, and you will find things.</p>
+    <p>Version 0.1, and honestly beta. The machine side runs on Linux and macOS: a desktop
+       app you install — a <code>.deb</code>, an AppImage, or a macOS disk image — with the
+       service running behind it. The phone side is iPhone and Android. Windows is not
+       supported yet. It has been driven end to end from a phone on cellular, and it is
+       what I use every day — but early access means you are testing it, and you will find
+       things.</p>
+    </div>
+  </section>
+
+  <section id="download" class="band">
+    <div class="wrap dl-wrap">
+      <h2>Get the desktop app</h2>
+      <p class="dl-lede">Version 0.1.0, for the computer you want to reach. It installs the
+         Orchestrator service and a small window that shows the pairing QR code, the paired
+         devices, and one switch to turn it off.</p>
+      <ul class="dl-list">
+        <li>
+          <a class="button" href="/download/orchestrator_0.1.0_amd64.deb.zip">Linux &middot; .deb</a>
+          <span class="dl-meta">Debian, Ubuntu &middot; x86-64 &middot; 15.5&nbsp;MB zipped</span>
+        </li>
+        <li>
+          <a class="button" href="/download/Orchestrator-0.1.0-x86_64.AppImage.zip">Linux &middot; AppImage</a>
+          <span class="dl-meta">Any distribution &middot; x86-64 &middot; 15.6&nbsp;MB zipped</span>
+        </li>
+        <li>
+          <a class="button" href="/download/Orchestrator-0.1.0-arm64.dmg.zip">macOS &middot; .dmg</a>
+          <span class="dl-meta">Apple silicon &middot; 28.3&nbsp;MB zipped</span>
+        </li>
+      </ul>
+      <p class="dl-note">Each file is zipped; unzip it before installing, and give the
+         AppImage the execute bit (<code>chmod +x</code>) once. Verify with
+         <a href="/download/SHA256SUMS">SHA256SUMS</a>, which covers the zips as downloaded.
+         The macOS build is signed ad-hoc rather than notarised, so Gatekeeper will ask you
+         to allow it the first time. There is no Windows build yet.</p>
+      <p class="dl-note">The phone app is still invite-only, and the desktop app has nothing
+         to pair with on its own — <a href="#access">ask for access</a> and the iPhone or
+         Android link comes back with it.</p>
     </div>
   </section>
 

@@ -37,6 +37,24 @@
         ]
       },
       {
+        "source": "/download/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "/download/SHA256SUMS",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "text/plain; charset=utf-8"
+          }
+        ]
+      },
+      {
         "source": "**",
         "headers": [
           {

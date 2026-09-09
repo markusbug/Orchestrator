@@ -368,3 +368,33 @@ h1 {
 
 .foot-link { color: var(--muted); text-underline-offset: 3px; margin-left: .5rem; }
 .foot-link:hover { color: var(--text); }
+
+/* --- downloads --- */
+
+.topbar-links { display: flex; gap: 1.25rem; align-items: baseline; }
+
+.cta-alt { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--rule); }
+.cta-alt:hover { color: var(--text); border-bottom-color: var(--clay); }
+
+.dl-wrap h2 { font-size: clamp(1.45rem, 1.2rem + 1vw, 1.95rem); letter-spacing: -.02em; }
+
+.dl-lede { margin-top: 1rem; max-width: var(--measure); color: var(--muted); }
+
+.dl-list {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.dl-list li { display: flex; flex-direction: column; gap: .6rem; }
+
+.dl-list .button { text-align: center; }
+
+.dl-meta { font-family: var(--mono); font-size: .78rem; color: var(--muted); }
+
+.dl-note { margin-top: 1.5rem; max-width: var(--measure); color: var(--muted); font-size: .9rem; }
+.dl-note a { border-bottom: 1px solid var(--rule); text-decoration: none; }
+.dl-note a:hover { border-bottom-color: var(--clay); }
