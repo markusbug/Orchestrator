@@ -2,7 +2,6 @@
 package session
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -25,6 +24,7 @@ import (
 	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
 	"github.com/markusbug/Orchestrator/daemon/internal/ringbuf"
 	"github.com/markusbug/Orchestrator/daemon/internal/store"
+	"github.com/markusbug/Orchestrator/daemon/internal/termscan"
 )
 
 // Errors.
@@ -61,6 +61,10 @@ type Spec struct {
 	Env             map[string]string
 	Cols, Rows      int
 	ClaudeSessionID string
+	// Hooked marks a session whose running/waiting status is driven by
+	// Claude Code hooks. Output bells and ordinary typing are then ignored;
+	// only hooks, an interrupt, and answering a pending prompt move it.
+	Hooked bool
 }
 
 // Event is emitted on session changes.
@@ -194,7 +198,7 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Session, error) {
 	}
 	s := &Session{
 		ID: NewID(), mgr: m, name: name, cwd: cwd, cmd: spec.Cmd, args: append([]string(nil), spec.Args...),
-		status: protocol.StatusRunning, claudeSessionID: spec.ClaudeSessionID,
+		status: protocol.StatusRunning, claudeSessionID: spec.ClaudeSessionID, hooked: spec.Hooked,
 		createdAt: time.Now(), lastOutputAt: time.Now(), cols: spec.Cols, rows: spec.Rows,
 		ring: ringbuf.New(m.opts.ScrollbackBytes), subs: map[*Subscriber]struct{}{}, done: make(chan struct{}),
 	}
@@ -423,6 +427,9 @@ type Session struct {
 	args            []string
 	pid             int
 	status          string
+	waitReason      string
+	hooked          bool
+	bell            termscan.Bell // fed from readLoop only
 	exitCode        *int
 	claudeSessionID string
 	createdAt       time.Time
@@ -448,7 +455,7 @@ func (s *Session) Info() protocol.SessionInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return protocol.SessionInfo{ID: s.ID, Handle: s.Handle, Name: s.name, Cwd: s.cwd, Cmd: s.cmd,
-		Args: append([]string{}, s.args...), PID: s.pid, Status: s.status, ExitCode: s.exitCode,
+		Args: append([]string{}, s.args...), PID: s.pid, Status: s.status, WaitReason: s.waitReason, ExitCode: s.exitCode,
 		ClaudeSessionID: s.claudeSessionID, CreatedAt: s.createdAt.UnixMilli(),
 		LastOutputAt: s.lastOutputAt.UnixMilli(), Cols: s.cols, Rows: s.rows, Preview: preview(s.ring)}
 }
@@ -463,12 +470,16 @@ func (s *Session) readLoop() {
 		if n > 0 {
 			chunk := buf[:n]
 			s.ring.Write(chunk)
-			bell := bytes.IndexByte(chunk, 7) >= 0
+			bell := s.bell.Feed(chunk) > 0
 			s.mu.Lock()
 			s.lastOutputAt = time.Now()
 			changed := false
-			if bell && s.status == protocol.StatusRunning {
+			// A real bell means "look at me" for programs we know nothing
+			// about. Hooked sessions say so through hooks instead, and a bell
+			// from a command Claude runs must not masquerade as a question.
+			if bell && !s.hooked && s.status == protocol.StatusRunning {
 				s.status = protocol.StatusWaiting
+				s.waitReason = protocol.WaitInput
 				changed = true
 			}
 			subs := make([]*Subscriber, 0, len(s.subs))
@@ -508,6 +519,7 @@ func (s *Session) readLoop() {
 	}
 	s.mu.Lock()
 	s.status = final
+	s.waitReason = ""
 	s.exitCode = &code
 	s.pty.Close()
 	subs := make([]*Subscriber, 0, len(s.subs))
@@ -554,17 +566,32 @@ func (s *Session) Detach(sub *Subscriber) {
 	sub.close(ErrSubscriberClosed)
 }
 
-// Write sends input to the process. Input clears the waiting flag.
+// Write sends input to the process and lets the status follow what the
+// person did. Reports the terminal emulator generates on its own (device
+// attributes, cursor position, mouse, focus) never count as input.
+//
+// For hooked sessions a bare Escape or Ctrl-C interrupts the turn, which
+// fires no hook, so it marks the session idle; an answering key while a
+// prompt is pending marks it running (the tool proceeds long before its
+// PostToolUse hook); ordinary typing changes nothing, because Claude is
+// still waiting until the prompt is submitted. Other sessions go back to
+// running on any real keystroke, as before.
 func (s *Session) Write(p []byte) error {
+	kind := termscan.Classify(p)
 	s.mu.Lock()
 	if s.pty == nil || (s.status != protocol.StatusRunning && s.status != protocol.StatusWaiting) {
 		s.mu.Unlock()
 		return ErrNotRunning
 	}
 	changed := false
-	if s.status == protocol.StatusWaiting {
-		s.status = protocol.StatusRunning
-		changed = true
+	switch {
+	case kind == termscan.Report:
+	case !s.hooked:
+		changed = s.setLocked(protocol.StatusRunning, "")
+	case kind == termscan.Interrupt:
+		changed = s.setLocked(protocol.StatusWaiting, protocol.WaitIdle)
+	case kind == termscan.Answer && s.status == protocol.StatusWaiting && s.waitReason == protocol.WaitInput:
+		changed = s.setLocked(protocol.StatusRunning, "")
 	}
 	f := s.pty
 	s.mu.Unlock()
@@ -636,23 +663,36 @@ func (s *Session) Rename(ctx context.Context, name string) {
 }
 
 // SetStatus applies a running/waiting transition from an external signal
-// (Claude Code hooks). It is ignored unless the session is alive.
-func (s *Session) SetStatus(status string) bool {
+// (Claude Code hooks). reason qualifies a waiting status (protocol.WaitIdle
+// or protocol.WaitInput) and is ignored for running. It is ignored unless
+// the session is alive, and reports whether anything changed.
+func (s *Session) SetStatus(status, reason string) bool {
 	if status != protocol.StatusRunning && status != protocol.StatusWaiting {
 		return false
 	}
-	s.mu.Lock()
-	alive := s.status == protocol.StatusRunning || s.status == protocol.StatusWaiting
-	changed := alive && s.status != status
-	if changed {
-		s.status = status
+	if status == protocol.StatusRunning {
+		reason = ""
+	} else if reason != protocol.WaitIdle && reason != protocol.WaitInput {
+		reason = protocol.WaitInput
 	}
+	s.mu.Lock()
+	changed := s.setLocked(status, reason)
 	s.mu.Unlock()
 	if changed {
 		s.persistStatus()
 		s.mgr.emit(Event{Kind: "changed", Session: s.Info()})
 	}
 	return changed
+}
+
+// setLocked moves an alive session to status/reason. Caller holds s.mu.
+func (s *Session) setLocked(status, reason string) bool {
+	alive := s.status == protocol.StatusRunning || s.status == protocol.StatusWaiting
+	if !alive || (s.status == status && s.waitReason == reason) {
+		return false
+	}
+	s.status, s.waitReason = status, reason
+	return true
 }
 
 func (s *Session) persistStatus() {

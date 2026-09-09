@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/markusbug/Orchestrator/daemon/internal/claude"
 	"github.com/markusbug/Orchestrator/daemon/internal/config"
 	"github.com/markusbug/Orchestrator/daemon/internal/core"
 	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
@@ -52,7 +53,7 @@ func TestAdminOverSocket(t *testing.T) {
 	if len(list) != 1 || list[0].ID != s.ID {
 		t.Fatalf("%+v", list)
 	}
-	if err := cl.Hook(s.ID, "stop"); err != nil {
+	if err := cl.Hook(s.ID, claude.Hook{Event: "stop"}); err != nil {
 		t.Fatal(err)
 	}
 	if s.Info().Status != protocol.StatusWaiting {

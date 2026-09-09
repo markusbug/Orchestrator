@@ -48,14 +48,17 @@ class _TerminalScreenState extends State<TerminalScreen> {
   double? _scaleStartFont;
   double _fontSize = 13;
 
-  HostConnection get conn =>
-      AppScope.read(context).connectionFor(widget.hostId);
+  // Resolved once: dispose() runs after the element is deactivated, when
+  // looking up an inherited widget is no longer allowed.
+  late final HostConnection conn;
   SessionInfo? get session => conn.sessions[widget.sessionId];
 
   @override
   void initState() {
     super.initState();
-    _fontSize = AppScope.read(context).settings.fontSize;
+    final model = AppScope.read(context);
+    conn = model.connectionFor(widget.hostId);
+    _fontSize = model.settings.fontSize;
     _terminal = _newTerminal();
   }
 
@@ -88,8 +91,13 @@ class _TerminalScreenState extends State<TerminalScreen> {
         onDetached: _onDetached,
       );
       _binding = b;
-      conn.attach(b).catchError((Object e) {
-        if (mounted) setState(() => _banner = 'attach failed: $e');
+      // onResize fires from the terminal view's layout pass; attaching
+      // resets the terminal with setState, which must wait for the frame.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        conn.attach(b).catchError((Object e) {
+          if (mounted) setState(() => _banner = 'attach failed: $e');
+        });
       });
       return;
     }
@@ -137,11 +145,24 @@ class _TerminalScreenState extends State<TerminalScreen> {
       setState(() => _ctrl = false);
     }
     final s = session;
-    if (s != null && s.isWaiting && AppScope.read(context).settings.haptics) {
+    if (s != null &&
+        s.isWaiting &&
+        !isTerminalReport(data) &&
+        AppScope.read(context).settings.haptics) {
       HapticFeedback.selectionClick();
     }
     conn.sendInput(widget.sessionId, bytes);
   }
+
+  /// True for bytes the terminal emulator produced on its own rather than
+  /// the person typing: replies to device queries, cursor position and size
+  /// reports, mouse and focus events. The daemon ignores these for the
+  /// session status; the phone should not buzz for them either.
+  static bool isTerminalReport(String data) => _report.hasMatch(data);
+
+  static final _report = RegExp(
+    r'^(?:\x1b\[(?:[?>]?[0-9;]*[cnR]|8;[0-9;]*t|[IO]|<[0-9;]*[Mm]|M...)|\x1bP[^\x1b]*\x1b\\)+$',
+  );
 
   // ---- key bar ----
 

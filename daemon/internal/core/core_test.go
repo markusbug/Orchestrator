@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/markusbug/Orchestrator/daemon/internal/claude"
 	"github.com/markusbug/Orchestrator/daemon/internal/config"
 	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
 )
@@ -81,13 +82,13 @@ func TestExplicitResumeNotDoubled(t *testing.T) {
 func TestStaleAfterRestartAndHook(t *testing.T) {
 	c, root := newCore(t)
 	s, _ := c.CreateSession(context.Background(), protocol.SessionCreate{Cwd: root, Cmd: "sh", Args: []string{"-c", "cat"}})
-	if !c.ApplyHook(s.ID, "stop") || s.Info().Status != protocol.StatusWaiting {
+	if !c.ApplyHook(s.ID, claude.Hook{Event: "stop"}) || s.Info().Status != protocol.StatusWaiting {
 		t.Fatal("hook did not set waiting")
 	}
-	if !c.ApplyHook(s.ID, "prompt") || s.Info().Status != protocol.StatusRunning {
+	if !c.ApplyHook(s.ID, claude.Hook{Event: "userpromptsubmit"}) || s.Info().Status != protocol.StatusRunning {
 		t.Fatal("hook did not set running")
 	}
-	if c.ApplyHook(s.ID, "unknown") || c.ApplyHook("nope", "stop") {
+	if c.ApplyHook(s.ID, claude.Hook{Event: "unknown"}) || c.ApplyHook("nope", claude.Hook{Event: "stop"}) {
 		t.Fatal("bad hooks accepted")
 	}
 	paths, cfg := c.Paths, c.Cfg

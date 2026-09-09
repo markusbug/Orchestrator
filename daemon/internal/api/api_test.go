@@ -56,13 +56,15 @@ func newEnv(t *testing.T, debug bool) *env {
 
 // client is a minimal protocol client that pins the server fingerprint.
 type client struct {
-	t     *testing.T
-	ws    *websocket.Conn
-	rid   int64
-	nonce []byte
-	bin   [][]byte
-	msgs  []protocol.Message
-	seen  int // cursor into msgs for waitMatch
+	t       *testing.T
+	ws      *websocket.Conn
+	rid     int64
+	nonce   []byte
+	bin     [][]byte
+	msgs    []protocol.Message
+	seen    int         // cursor into msgs for waitMatch
+	trail   []string    // live tests: status/reason transitions seen, oldest first
+	trailAt []time.Time // when each trail entry arrived
 }
 
 func (e *env) dial(t *testing.T) *client {

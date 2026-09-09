@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/markusbug/Orchestrator/daemon/internal/claude"
 	"github.com/markusbug/Orchestrator/daemon/internal/config"
 	"github.com/markusbug/Orchestrator/daemon/internal/core"
 	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
@@ -52,7 +53,7 @@ type DeviceInfo struct {
 // HookRequest is posted by `orchestrator _hook`.
 type HookRequest struct {
 	SessionID string `json:"session_id"`
-	Event     string `json:"event"`
+	claude.Hook
 }
 
 // Server serves the admin API.
@@ -142,7 +143,8 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		changed := s.Core.ApplyHook(req.SessionID, req.Event)
+		changed := s.Core.ApplyHook(req.SessionID, req.Hook)
+		s.Core.Log.Debug("hook", "session", req.SessionID, "event", req.Event, "type", req.NotificationType, "tool", req.ToolName, "agent", req.AgentID, "changed", changed)
 		writeJSON(w, map[string]bool{"changed": changed})
 	})
 	return mux
@@ -307,6 +309,6 @@ func (c *Client) Pair() (protocol.PairPayload, error) {
 }
 
 // Hook reports a Claude Code hook event.
-func (c *Client) Hook(sessionID, event string) error {
-	return c.do("POST", "/hook", HookRequest{SessionID: sessionID, Event: event}, nil)
+func (c *Client) Hook(sessionID string, h claude.Hook) error {
+	return c.do("POST", "/hook", HookRequest{SessionID: sessionID, Hook: h}, nil)
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/markusbug/Orchestrator/daemon/internal/admin"
 	"github.com/markusbug/Orchestrator/daemon/internal/api"
 	"github.com/markusbug/Orchestrator/daemon/internal/auth"
+	"github.com/markusbug/Orchestrator/daemon/internal/claude"
 	"github.com/markusbug/Orchestrator/daemon/internal/config"
 	"github.com/markusbug/Orchestrator/daemon/internal/core"
 	"github.com/markusbug/Orchestrator/daemon/internal/protocol"
@@ -615,7 +616,9 @@ func runHook(args []string) error {
 	if len(args) < 1 {
 		return nil
 	}
-	io.Copy(io.Discard, os.Stdin) // drain hook payload
+	h := claude.ParseHookPayload(os.Stdin)
+	io.Copy(io.Discard, os.Stdin) // never leave Claude blocked on a full pipe
+	h.Event = args[0]
 	sid := os.Getenv("ORCHESTRATOR_SESSION_ID")
 	if sid == "" {
 		return nil
@@ -628,7 +631,7 @@ func runHook(args []string) error {
 	} else {
 		return nil
 	}
-	_ = cl.Hook(sid, args[0])
+	_ = cl.Hook(sid, h)
 	return nil
 }
 

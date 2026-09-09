@@ -181,15 +181,102 @@ func TestStatusTransitions(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	s.Write([]byte("x"))
-	if s.Info().Status != protocol.StatusRunning {
-		t.Fatal("input did not clear waiting")
+	if s.Info().WaitReason != protocol.WaitInput {
+		t.Fatalf("bell reason %q", s.Info().WaitReason)
 	}
-	if !s.SetStatus(protocol.StatusWaiting) || s.Info().Status != protocol.StatusWaiting {
+	// Terminal replies and mouse reports are not the person answering.
+	s.Write([]byte("\x1b[?1;2c"))
+	s.Write([]byte("\x1b[<64;3;4M"))
+	if s.Info().Status != protocol.StatusWaiting {
+		t.Fatal("terminal report cleared waiting")
+	}
+	s.Write([]byte("x"))
+	if st := s.Info(); st.Status != protocol.StatusRunning || st.WaitReason != "" {
+		t.Fatalf("input did not clear waiting: %+v", st)
+	}
+	if !s.SetStatus(protocol.StatusWaiting, protocol.WaitIdle) || s.Info().Status != protocol.StatusWaiting {
 		t.Fatal("SetStatus")
 	}
-	if s.SetStatus("bogus") {
+	if s.SetStatus(protocol.StatusWaiting, protocol.WaitIdle) {
+		t.Fatal("repeat SetStatus reported a change")
+	}
+	if s.SetStatus("bogus", "") {
 		t.Fatal("bogus status accepted")
+	}
+}
+
+// waitUntil polls until cond holds or the deadline passes.
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal(what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestHookedSessionIgnoresBellsAndTyping(t *testing.T) {
+	m := NewManager(Options{})
+	// Claude Code rewrites the title through OSC … BEL constantly, and a
+	// command it runs may ring a real bell; neither is a question for us.
+	s, _ := m.Create(context.Background(), Spec{Cwd: t.TempDir(), Cmd: "sh", Hooked: true,
+		Args: []string{"-c", "printf '\\033]0;title\\007real\\007'; cat"}})
+	defer s.Kill("KILL")
+	waitUntil(t, "no output", func() bool { return strings.Contains(string(s.Scrollback()), "real") })
+	if s.Info().Status != protocol.StatusRunning {
+		t.Fatal("bell moved a hooked session")
+	}
+	// Idle after Stop: typing a prompt keeps it waiting; only the hook starts a turn.
+	s.SetStatus(protocol.StatusWaiting, protocol.WaitIdle)
+	for _, in := range []string{"hello", "\x1b[A", "\r", "\x1b[?1;2c", "\x1b[<64;3;4M", "y", "1"} {
+		s.Write([]byte(in))
+		if st := s.Info(); st.Status != protocol.StatusWaiting || st.WaitReason != protocol.WaitIdle {
+			t.Fatalf("input %q moved an idle hooked session: %+v", in, st)
+		}
+	}
+	s.SetStatus(protocol.StatusRunning, "")
+	if st := s.Info(); st.Status != protocol.StatusRunning || st.WaitReason != "" {
+		t.Fatalf("%+v", st)
+	}
+	// Running: typing and reports change nothing; Escape interrupts to idle.
+	for _, in := range []string{"x", "\r", "\x1b[?1;2c", "\x1b[A"} {
+		s.Write([]byte(in))
+		if s.Info().Status != protocol.StatusRunning {
+			t.Fatalf("input %q moved a running hooked session", in)
+		}
+	}
+	s.Write([]byte("\x1b"))
+	if st := s.Info(); st.Status != protocol.StatusWaiting || st.WaitReason != protocol.WaitIdle {
+		t.Fatalf("escape did not idle: %+v", st)
+	}
+	s.SetStatus(protocol.StatusRunning, "")
+	s.Write([]byte("\x03"))
+	if st := s.Info(); st.Status != protocol.StatusWaiting || st.WaitReason != protocol.WaitIdle {
+		t.Fatalf("ctrl-c did not idle: %+v", st)
+	}
+	// A pending permission: navigation and reports keep waiting, Enter answers.
+	s.SetStatus(protocol.StatusWaiting, protocol.WaitInput)
+	for _, in := range []string{"\x1b[B", "\x1b[?1;2c", "\x1b[<64;3;4M"} {
+		s.Write([]byte(in))
+		if st := s.Info(); st.Status != protocol.StatusWaiting || st.WaitReason != protocol.WaitInput {
+			t.Fatalf("input %q moved a pending prompt: %+v", in, st)
+		}
+	}
+	s.Write([]byte("\r"))
+	if st := s.Info(); st.Status != protocol.StatusRunning {
+		t.Fatalf("enter did not answer: %+v", st)
+	}
+	s.SetStatus(protocol.StatusWaiting, protocol.WaitInput)
+	s.Write([]byte("\x1b"))
+	if st := s.Info(); st.Status != protocol.StatusWaiting || st.WaitReason != protocol.WaitIdle {
+		t.Fatalf("escape on a prompt did not idle: %+v", st)
+	}
+	// Reason changes are events too.
+	s.SetStatus(protocol.StatusWaiting, protocol.WaitInput)
+	if !s.SetStatus(protocol.StatusWaiting, protocol.WaitIdle) {
+		t.Fatal("reason change not reported")
 	}
 }
 

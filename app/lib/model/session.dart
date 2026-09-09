@@ -17,6 +17,7 @@ class SessionInfo {
     required this.args,
     required this.pid,
     required this.status,
+    this.waitReason = '',
     required this.exitCode,
     required this.claudeSessionId,
     required this.createdAt,
@@ -34,6 +35,10 @@ class SessionInfo {
   final List<String> args;
   final int pid;
   final String status;
+
+  /// Why a waiting session waits: `idle` (turn finished, needs a prompt) or
+  /// `input` (a permission or question is on screen). Empty otherwise.
+  final String waitReason;
   final int? exitCode;
   final String? claudeSessionId;
   final int createdAt; // unix ms
@@ -51,6 +56,7 @@ class SessionInfo {
     args: ((j['args'] as List?) ?? const []).cast<String>(),
     pid: (j['pid'] as num?)?.toInt() ?? 0,
     status: (j['status'] as String?) ?? SessionStatus.exited,
+    waitReason: (j['wait_reason'] as String?) ?? '',
     exitCode: (j['exit_code'] as num?)?.toInt(),
     claudeSessionId: j['claude_session_id'] as String?,
     createdAt: (j['created_at'] as num?)?.toInt() ?? 0,
@@ -64,6 +70,9 @@ class SessionInfo {
   bool get isWaiting => status == SessionStatus.waiting;
   bool get isExited => status == SessionStatus.exited;
   bool get isStale => status == SessionStatus.stale;
+
+  /// A permission or a question is blocking Claude until someone answers.
+  bool get needsAnswer => isWaiting && waitReason == 'input';
 
   /// Alive means the PTY is open (the process may or may not be done).
   bool get isAlive => isRunning || isWaiting;

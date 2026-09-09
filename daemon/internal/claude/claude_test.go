@@ -87,16 +87,59 @@ func TestHookSettingsShape(t *testing.T) {
 	if err := json.Unmarshal(b, &doc); err != nil {
 		t.Fatal(err)
 	}
-	for _, ev := range []string{"Notification", "Stop", "UserPromptSubmit"} {
+	for _, ev := range []string{"SessionStart", "Notification", "Stop", "StopFailure", "UserPromptSubmit", "PermissionRequest", "PreToolUse", "PostToolUse"} {
 		g := doc.Hooks[ev]
 		if len(g) != 1 || len(g[0].Hooks) != 1 || g[0].Hooks[0].Type != "command" {
 			t.Fatalf("%s: %+v", ev, g)
 		}
-		if !strings.HasPrefix(g[0].Hooks[0].Command, "'/opt/my dir/orchestrator' _hook ") {
+		if g[0].Hooks[0].Command != "'/opt/my dir/orchestrator' _hook "+strings.ToLower(ev) {
 			t.Fatalf("command %q", g[0].Hooks[0].Command)
 		}
 	}
-	if StatusForHook("stop") != "waiting" || StatusForHook("prompt") != "running" || StatusForHook("x") != "" {
-		t.Fatal("status mapping")
+}
+
+func TestStatusForHook(t *testing.T) {
+	cases := []struct {
+		h              Hook
+		status, reason string
+	}{
+		{Hook{Event: "userpromptsubmit"}, "running", ""},
+		{Hook{Event: "stop"}, "waiting", "idle"},
+		{Hook{Event: "stopfailure"}, "waiting", "idle"},
+		{Hook{Event: "permissionrequest", ToolName: "Bash"}, "waiting", "input"},
+		{Hook{Event: "pretooluse", ToolName: "Bash"}, "running", ""},
+		{Hook{Event: "pretooluse", ToolName: "AskUserQuestion"}, "waiting", "input"},
+		{Hook{Event: "posttooluse", ToolName: "AskUserQuestion"}, "running", ""},
+		{Hook{Event: "notification", NotificationType: "permission_prompt"}, "waiting", "input"},
+		{Hook{Event: "notification", NotificationType: "elicitation_dialog"}, "waiting", "input"},
+		{Hook{Event: "notification", NotificationType: "idle_prompt"}, "waiting", "idle"},
+		{Hook{Event: "notification", NotificationType: "auth_success"}, "", ""},
+		{Hook{Event: "notification"}, "", ""},
+		{Hook{Event: "pretooluse", ToolName: "Bash", AgentID: "ab6082fc"}, "", ""}, // background subagent
+		{Hook{Event: "posttooluse", ToolName: "Bash", AgentID: "ab6082fc"}, "", ""},
+		{Hook{Event: "subagentstop"}, "", ""},
+		{Hook{Event: "sessionstart"}, "waiting", "idle"},
+		{Hook{Event: "x"}, "", ""},
+	}
+	for _, c := range cases {
+		st, r := StatusForHook(c.h)
+		if st != c.status || r != c.reason {
+			t.Errorf("%+v: got %q/%q, want %q/%q", c.h, st, r, c.status, c.reason)
+		}
+	}
+}
+
+func TestParseHookPayload(t *testing.T) {
+	in := `{"session_id":"x","hook_event_name":"PreToolUse","tool_name":"Bash","agent_id":"ab6","tool_input":{"command":"ls"}}` + "\n"
+	h := ParseHookPayload(strings.NewReader(in))
+	if h.ToolName != "Bash" || h.AgentID != "ab6" {
+		t.Fatalf("%+v", h)
+	}
+	if h := ParseHookPayload(strings.NewReader("not json")); h != (Hook{}) {
+		t.Fatalf("garbage: %+v", h)
+	}
+	n := ParseHookPayload(strings.NewReader(`{"hook_event_name":"Notification","notification_type":"permission_prompt","message":"x"}`))
+	if n.NotificationType != "permission_prompt" {
+		t.Fatalf("%+v", n)
 	}
 }

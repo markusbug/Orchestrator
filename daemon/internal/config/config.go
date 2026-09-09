@@ -126,6 +126,11 @@ func DefaultPaths(overrideDir string) (Paths, error) {
 			dir = filepath.Join(home, ".config", "orchestrator")
 		}
 	}
+	// Sessions run in their own working directory and Claude Code resolves
+	// the hooks file from there, so the directory must be absolute.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 	sock := filepath.Join(dir, "admin.sock")
 	if overrideDir == "" && os.Getenv("ORCHESTRATOR_DIR") == "" {
 		if rt := os.Getenv("XDG_RUNTIME_DIR"); rt != "" && runtime.GOOS == "linux" {

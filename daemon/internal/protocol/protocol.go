@@ -186,6 +186,14 @@ const (
 	StatusStale   = "stale"
 )
 
+// Reasons a session is waiting.
+const (
+	// WaitIdle: the turn finished (or was interrupted); it needs a new prompt.
+	WaitIdle = "idle"
+	// WaitInput: a permission or a question is on screen and blocks progress.
+	WaitInput = "input"
+)
+
 // SessionInfo describes a session to clients.
 type SessionInfo struct {
 	ID              string   `json:"id"`
@@ -196,6 +204,7 @@ type SessionInfo struct {
 	Args            []string `json:"args"`
 	PID             int      `json:"pid"`
 	Status          string   `json:"status"`
+	WaitReason      string   `json:"wait_reason,omitempty"` // why a waiting session waits: idle | input
 	ExitCode        *int     `json:"exit_code,omitempty"`
 	ClaudeSessionID string   `json:"claude_session_id,omitempty"`
 	CreatedAt       int64    `json:"created_at"`     // unix ms

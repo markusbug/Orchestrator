@@ -632,12 +632,14 @@ func (c *conn) handleBinary(data []byte) {
 	}
 	kind, handle, payload, err := protocol.DecodeFrame(data)
 	if err != nil || kind != protocol.KindInput {
+		c.srv.Log.Debug("input frame dropped", "err", err, "kind", kind)
 		return
 	}
 	c.mu.Lock()
 	a, ok := c.attached[handle]
 	c.mu.Unlock()
 	if !ok {
+		c.srv.Log.Debug("input for unattached handle", "handle", handle)
 		return
 	}
 	if err := a.sess.Write(payload); err != nil {

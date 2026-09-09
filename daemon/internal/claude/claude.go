@@ -150,43 +150,102 @@ func contentText(raw json.RawMessage) string {
 	return ""
 }
 
-// Hook event names reported by `orchestrator _hook <event>`.
+// Hook event names reported by `orchestrator _hook <event>`. They are the
+// Claude Code hook names, lower-cased, so a settings file and a report line
+// up without a table.
 const (
-	HookNotification = "notification"
+	HookSessionStart = "sessionstart"
+	HookPrompt       = "userpromptsubmit"
 	HookStop         = "stop"
-	HookPrompt       = "prompt"
+	HookStopFailure  = "stopfailure"
+	HookNotification = "notification"
+	HookPermission   = "permissionrequest"
+	HookPreTool      = "pretooluse"
+	HookPostTool     = "posttooluse"
 )
 
-// StatusForHook maps a hook event to a session status, or "" for no change.
-func StatusForHook(event string) string {
-	switch event {
-	case HookNotification, HookStop:
-		return protocol.StatusWaiting
-	case HookPrompt:
-		return protocol.StatusRunning
-	}
-	return ""
+// Hook is one hook event as delivered to the daemon: the event name plus
+// the payload fields that decide what it means.
+type Hook struct {
+	Event            string `json:"event"`
+	NotificationType string `json:"notification_type,omitempty"`
+	ToolName         string `json:"tool_name,omitempty"`
+	// AgentID is set when the hook fired inside a subagent. Subagents keep
+	// running after the main agent has stopped, so their hooks say nothing
+	// about whether the person is needed.
+	AgentID string `json:"agent_id,omitempty"`
 }
+
+// ParseHookPayload extracts the fields Hook needs from the JSON Claude Code
+// writes to a hook's stdin. Anything unreadable yields an empty Hook.
+func ParseHookPayload(r io.Reader) Hook {
+	var h Hook
+	_ = json.NewDecoder(io.LimitReader(r, 1<<20)).Decode(&h)
+	return h
+}
+
+// StatusForHook maps a hook event to a session status and, for waiting, the
+// reason (protocol.WaitIdle or protocol.WaitInput). It returns "" for events
+// that must not move the status.
+//
+// The mapping follows what Claude Code 2.1 actually fires:
+//
+//   - UserPromptSubmit starts a turn, including queued prompts and the
+//     task-notification wake-ups after a background agent finishes.
+//   - PreToolUse/PostToolUse mean the main agent is working. They also lift
+//     an input wait once a permission was answered or a question submitted,
+//     which no other hook reports. Inside subagents they are ignored.
+//   - PermissionRequest fires the moment a permission dialog opens;
+//     Notification(permission_prompt) follows only after several seconds.
+//   - AskUserQuestion is a tool whose PreToolUse fires as its dialog opens.
+//   - Stop and StopFailure end a turn. Nothing fires on a user interrupt;
+//     the session layer handles that from the Escape key itself.
+//   - SessionStart fires once the TUI is up and idle at its prompt, so a
+//     fresh session is not shown as running until its first Stop.
+func StatusForHook(h Hook) (status, reason string) {
+	if h.AgentID != "" {
+		return "", ""
+	}
+	switch strings.ToLower(h.Event) {
+	case HookPrompt, HookPostTool:
+		return protocol.StatusRunning, ""
+	case HookPreTool:
+		if h.ToolName == "AskUserQuestion" {
+			return protocol.StatusWaiting, protocol.WaitInput
+		}
+		return protocol.StatusRunning, ""
+	case HookPermission:
+		return protocol.StatusWaiting, protocol.WaitInput
+	case HookNotification:
+		switch h.NotificationType {
+		case "permission_prompt", "elicitation_dialog":
+			return protocol.StatusWaiting, protocol.WaitInput
+		case "idle_prompt":
+			return protocol.StatusWaiting, protocol.WaitIdle
+		}
+		return "", ""
+	case HookStop, HookStopFailure, HookSessionStart:
+		return protocol.StatusWaiting, protocol.WaitIdle
+	}
+	return "", ""
+}
+
+// hookEvents lists the Claude Code hook names the daemon subscribes to.
+var hookEvents = []string{"SessionStart", "UserPromptSubmit", "Stop", "StopFailure", "Notification", "PermissionRequest", "PreToolUse", "PostToolUse"}
 
 // HookSettings builds the JSON passed to `claude --settings`.
 func HookSettings(exe string) []byte {
-	cmd := func(ev string) map[string]any {
-		return map[string]any{
+	hooks := map[string]any{}
+	for _, ev := range hookEvents {
+		hooks[ev] = []map[string]any{{
 			"hooks": []map[string]any{{
 				"type":    "command",
-				"command": shellQuote(exe) + " _hook " + ev,
+				"command": shellQuote(exe) + " _hook " + strings.ToLower(ev),
 				"timeout": 5,
 			}},
-		}
+		}}
 	}
-	doc := map[string]any{
-		"hooks": map[string]any{
-			"Notification":     []map[string]any{cmd(HookNotification)},
-			"Stop":             []map[string]any{cmd(HookStop)},
-			"UserPromptSubmit": []map[string]any{cmd(HookPrompt)},
-		},
-	}
-	b, _ := json.MarshalIndent(doc, "", "  ")
+	b, _ := json.MarshalIndent(map[string]any{"hooks": hooks}, "", "  ")
 	return b
 }
 

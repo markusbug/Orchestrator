@@ -194,8 +194,10 @@ func (c *Core) CreateSession(ctx context.Context, req protocol.SessionCreate) (*
 	if IsClaude(cmd) && !hasResumeFlag(req.Args) {
 		spec.ClaudeSessionID = session.NewID()
 		spec.ExtraArgs = []string{"--session-id", spec.ClaudeSessionID, "--settings", c.Paths.HooksFile}
+		spec.Hooked = true
 	} else if IsClaude(cmd) {
 		spec.ExtraArgs = []string{"--settings", c.Paths.HooksFile}
+		spec.Hooked = true
 	}
 	return c.Mgr.Create(ctx, spec)
 }
@@ -227,6 +229,7 @@ func (c *Core) ResumeSession(ctx context.Context, id string, cols, rows int) (*s
 	}
 	spec := session.Spec{Name: info.Name, Cwd: cwd, Cmd: info.Cmd, Args: info.Args, Cols: cols, Rows: rows}
 	if IsClaude(info.Cmd) {
+		spec.Hooked = true
 		if info.ClaudeSessionID != "" {
 			spec.ClaudeSessionID = info.ClaudeSessionID
 			spec.ExtraArgs = []string{"--resume", info.ClaudeSessionID, "--settings", c.Paths.HooksFile}
@@ -243,8 +246,8 @@ func (c *Core) ResumeSession(ctx context.Context, id string, cols, rows int) (*s
 }
 
 // ApplyHook updates a session's status from a Claude Code hook event.
-func (c *Core) ApplyHook(sessionID, event string) bool {
-	status := claude.StatusForHook(event)
+func (c *Core) ApplyHook(sessionID string, h claude.Hook) bool {
+	status, reason := claude.StatusForHook(h)
 	if status == "" {
 		return false
 	}
@@ -252,7 +255,7 @@ func (c *Core) ApplyHook(sessionID, event string) bool {
 	if err != nil {
 		return false
 	}
-	return s.SetStatus(status)
+	return s.SetStatus(status, reason)
 }
 
 // Conversations lists Claude Code transcripts for a folder under the roots.
