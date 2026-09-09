@@ -24,17 +24,6 @@ version of all of the above, and where to ask for access.
 
 ## Install
 
-> **While this repository is private**, the one-liner and the release links below
-> return 404 to anyone not signed in — that includes `curl`. Download with the
-> GitHub CLI instead:
->
-> ```
-> gh release download desktop-v0.1.0 -R markusbug/Orchestrator
-> sudo apt-get install -y ./orchestrator_0.1.0_amd64.deb
-> ```
->
-> Everything below starts working as written the moment the repo goes public.
-
 ### Linux
 
 ```

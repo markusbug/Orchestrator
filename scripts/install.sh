@@ -80,17 +80,18 @@ if [ -z "$VERSION" ]; then
 	VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases" 2>/dev/null |
 		sed -n 's/.*"tag_name": *"\(desktop-v[^"]*\)".*/\1/p' | head -1)
 	if [ -z "$VERSION" ]; then
-		# While the repository is private this is what you get: the API and
-		# every asset URL answer 404 to an anonymous request.
+		# Nothing came back. The usual cause is the anonymous API rate
+		# limit -- 60 requests an hour per IP -- rather than a missing
+		# release, so point at the tag override instead of giving up.
 		die "no desktop-v* release found.
 
-If the repository is still private, this script cannot reach it. Use the
-GitHub CLI instead:
+The GitHub API returned no release. That is usually the anonymous rate
+limit (60 requests an hour per IP) or a network that blocks
+api.github.com, not a missing release.
 
-  gh release download desktop-v0.1.0 -R $REPO -p 'orchestrator_*_amd64.deb'
-  sudo apt-get install -y ./orchestrator_*_amd64.deb
+Pick a tag from https://github.com/$REPO/releases and pass it:
 
-Otherwise pass --version <tag> explicitly."
+  curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | sh -s -- --version desktop-v0.1.0"
 	fi
 fi
 BASE="https://github.com/$REPO/releases/download/$VERSION"
