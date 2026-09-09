@@ -4,13 +4,13 @@ Status: implemented in `daemon/internal/relay` and `daemon/cmd/relay` and deploy
 
 ## Goal
 
-An everyday user must never open a port, edit a firewall, or read an IP address. The daemon therefore opens *outbound* connections to a relay, the phone connects to the same relay by host id, and the relay forwards bytes it cannot read. LAN and Tailscale stay as faster paths the app tries first; the relay is the path that always works.
+An everyday user must never open a port, edit a firewall, or read an IP address. The daemon therefore opens *outbound* connections to a relay, the phone connects to the same relay by host id, and the relay forwards bytes it cannot read. The relay is the path the app takes, on every network: it is the one path that always works, so the app no longer gambles on a LAN address that may or may not answer. LAN and Tailscale remain as faster direct paths, but only as the fallback for a host with no relay and for a relay that is down.
 
 The relay must be cheap to run: one small VPS should carry tens of thousands of idle hosts, and scaling further must not require shared state.
 
 ## Core design
 
-The reference model is Tailscale's DERP: a dumb relay, end-to-end encrypted, used only when a direct path fails.
+The reference model is Tailscale's DERP: a dumb relay, end-to-end encrypted, that cannot read a byte of what it carries. It differs from DERP in when it is used: DERP is the last resort behind every direct path, while this relay is the path the app prefers and the direct paths are the fallback.
 
 ```
 phone ──TLS, SNI = <hostid>.relay.example──▶ relay:443 ──raw bytes over a WSS data socket──▶ daemon's TLS listener
@@ -46,7 +46,13 @@ The cost is one extra socket per *active* phone, which is rare compared to idle 
 
 ### Connection order in the app
 
-Last-good address, then LAN, then Tailscale, then relay. Bytes only cross the relay when nothing else works. In steady state the relay carries heartbeats and nothing else.
+The relay first, alone. Direct addresses — last-good, then LAN, then Tailscale — start three seconds later, or as soon as every relay dial has failed, and the first connection to complete wins. The head start is longer than a direct dial needs because the relay adds a round trip to the daemon before TLS begins; any shorter and a LAN dial would quietly win the race against a healthy relay.
+
+So bytes cross the relay whenever the host has one, including when the phone and the host sit on the same Wi-Fi. That costs latency on a LAN, and it is deliberate: one path that behaves the same everywhere is worth more than a faster path that works only sometimes, and a stale LAN entry can no longer decide how a session connects. The direct paths still cover a host with no relay configured and a relay that is down.
+
+Only a direct address is ever remembered as last-good. The relay leads regardless, so that memory now orders the fallbacks rather than deciding whether the relay is used.
+
+This inverts the traffic assumption the capacity sections below were written against. The relay no longer carries heartbeats and the occasional remote session: it carries the bytes of every active session, from phones that would previously have gone direct. The per-node limits still hold — they are bounded by *active* streams, which iOS keeps short-lived — but the byte volume per active phone is now the full session rather than nothing, so re-check bandwidth before assuming an idle-host node count.
 
 ### Reconnect policy in the daemon
 

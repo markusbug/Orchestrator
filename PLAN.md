@@ -79,7 +79,7 @@ Single WebSocket per (client, host). After TLS + auth handshake:
 **Zero network configuration is a product requirement.** A user must never open a port, edit a firewall, or read an IP address to use Orchestrator. The first phone pairing on the developer's laptop failed because `ufw` silently dropped the daemon's port; that is exactly the class of problem end users will not diagnose. The path out of it:
 
 - **Short term (MVP):** the installer and `orchestrator status` detect an active host firewall (`ufw`, `firewalld`, Windows Defender Firewall, macOS application firewall) and either add the allow rule during `orchestrator install` (with a clear prompt) or print the exact command. The app's pairing error names the firewall as the likely cause.
-- **Real fix:** the daemon opens an *outbound* connection, so nothing listens on the host and no inbound rule is ever needed. That is the relay in item 3, and it is the default connection path once it exists. LAN direct becomes an optimisation the app tries first, not something the user has to make work.
+- **Real fix:** the daemon opens an *outbound* connection, so nothing listens on the host and no inbound rule is ever needed. That is the relay in item 3, and it is the connection path the app takes by default. LAN direct becomes a fallback optimisation, not something the user has to make work.
 - **Public API:** the relay is fronted by a documented API (host registration, device pairing, session events, opaque frame forwarding) so that the phone app, the desktop app, and third-party integrations all use the same contract. Self-hosting the relay stays possible; the hosted one is what makes it work out of the box.
 
 ### 2.5 Security model
@@ -174,7 +174,7 @@ Orchestrator/
 
 - **Terminal width on phones.** Claude Code's TUI wants ~80 columns; a portrait phone at a readable font gives ~45. Mitigate with a compact default font, pinch-zoom, landscape mode, and the daemon reporting the phone's size so Ink lays out for it. Structured mode is the long-term answer.
 - **Daemon restarts kill sessions.** Mitigated by `claude --continue` resume in M5, and structurally by per-session host processes.
-- **Remote reachability.** The hosted relay is the default no-setup path; LAN and Tailscale remain the faster paths the app tries first.
+- **Remote reachability.** The hosted relay is the default no-setup path and the one the app dials first on every network; LAN and Tailscale remain as faster direct fallbacks.
 - **Signing costs and friction.** Apple Developer ID and a Windows code-signing certificate are needed for a smooth install. Budget for them before M4.
 - **Windows ConPTY quirks.** Test early (M1) on real Windows; keep Windows shell defaults sane.
 - **Security exposure.** A paired phone is a shell on the laptop. Pairing must be short-lived, keys hardware-backed on the phone, and revocation one tap away.
