@@ -151,12 +151,17 @@ class HostRecord {
     if (lastGoodAddr != null) 'last_good_addr': lastGoodAddr,
   };
 
-  /// Addresses in the order to try: last known good direct address, LAN,
-  /// Tailscale, then anything else, with the relay last. The relay always
-  /// works but is the slowest path and crosses a third party, so direct
-  /// addresses get their chance first even after a relay session.
+  /// Addresses in the order to try: the relay first, then the last known
+  /// good direct address, LAN, Tailscale, then anything else. The relay is
+  /// the only path that works from anywhere, so it is preferred even when a
+  /// LAN address is listed and both devices are on the same network. The
+  /// direct addresses stay as the fallback for a host with no relay
+  /// configured, and for a relay that is down.
   List<HostAddr> get orderedAddrs {
     final out = <HostAddr>[];
+    for (final a in addrs) {
+      if (a.isRelay) out.add(a);
+    }
     final good = lastGoodAddr;
     if (good != null) {
       for (final a in addrs) {

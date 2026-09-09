@@ -40,11 +40,17 @@ String describeDialError(Object e) {
 
 /// Opens TLS to the first address that answers.
 ///
-/// Direct addresses (LAN, Tailscale) are dialled together, so a stale entry
-/// does not hold up a live one. Relay addresses start only after
-/// [relayHeadStart], or as soon as every direct dial has failed, so bytes
-/// cross the relay only when no direct path works. Whichever connects first
+/// The relay is dialled first and alone. It is the one path that works from
+/// anywhere, so it is taken even when the host advertises a LAN address and
+/// both devices sit on the same network. Direct addresses (LAN, Tailscale)
+/// are dialled together, but only after [directHeadStart], or as soon as
+/// every relay dial has failed — they are the fallback for a host with no
+/// relay configured and for a relay that is down. Whichever connects first
 /// wins; the others are closed as they complete.
+///
+/// [directHeadStart] is longer than a direct dial needs because the relay
+/// adds a round trip to the daemon before TLS starts: a healthy relay must
+/// have time to answer, or the LAN would quietly win the race.
 ///
 /// Throws [FingerprintMismatch] as soon as any address presents a
 /// certificate that is not the pinned one, and [DialFailed] when every
@@ -53,15 +59,15 @@ Future<Dialed> dialFirst(
   List<HostAddr> addrs, {
   required int hostPort,
   required String fingerprint,
-  Duration relayHeadStart = const Duration(milliseconds: 1500),
+  Duration directHeadStart = const Duration(seconds: 3),
 }) {
   if (addrs.isEmpty) {
     return Future.error(StateError('no addresses for this host'));
   }
   final done = Completer<Dialed>();
   final failures = <HostAddr, Object>{};
-  final relays = addrs.where((a) => a.isRelay).toList();
-  var relaysStarted = relays.isEmpty;
+  final direct = addrs.where((a) => !a.isRelay).toList();
+  var directStarted = direct.isEmpty;
   var inFlight = 0;
   Timer? headStart;
 
@@ -71,11 +77,11 @@ Future<Dialed> dialFirst(
 
   late final void Function(HostAddr) launch;
 
-  void startRelays() {
-    if (relaysStarted || done.isCompleted) return;
-    relaysStarted = true;
+  void startDirect() {
+    if (directStarted || done.isCompleted) return;
+    directStarted = true;
     headStart?.cancel();
-    relays.forEach(launch);
+    direct.forEach(launch);
   }
 
   launch = (HostAddr a) {
@@ -106,8 +112,8 @@ Future<Dialed> dialFirst(
         .whenComplete(() {
           inFlight--;
           if (done.isCompleted) return;
-          if (!relaysStarted) {
-            if (inFlight == 0) startRelays();
+          if (!directStarted) {
+            if (inFlight == 0) startDirect();
             return;
           }
           if (inFlight == 0) {
@@ -118,13 +124,13 @@ Future<Dialed> dialFirst(
   };
 
   for (final a in addrs) {
-    if (!a.isRelay) launch(a);
+    if (a.isRelay) launch(a);
   }
-  if (!relaysStarted) {
+  if (!directStarted) {
     if (inFlight == 0) {
-      startRelays();
+      startDirect();
     } else {
-      headStart = Timer(relayHeadStart, startRelays);
+      headStart = Timer(directHeadStart, startDirect);
     }
   }
   return done.future;

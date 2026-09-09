@@ -233,7 +233,7 @@ class HostConnection extends ChangeNotifier {
       connectedAddr = addr;
       lastConnectedAt = DateTime.now();
       // Only a direct address is worth remembering: the relay is tried
-      // last regardless, so it never shadows a LAN path that came back.
+      // first regardless, so lastGoodAddr only orders the fallbacks.
       if (!addr.isRelay && host.lastGoodAddr != addr.ip) {
         host.lastGoodAddr = addr.ip;
         onHostChanged?.call(host);

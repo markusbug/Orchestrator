@@ -131,7 +131,7 @@ void main() {
       expect(back.lastGoodAddr, '100.64.0.1');
     });
 
-    test('relay address sorts last and keeps its own port', () {
+    test('relay address sorts first and keeps its own port', () {
       final h = HostRecord(
         id: 'x',
         name: 'x',
@@ -147,18 +147,22 @@ void main() {
         createdAt: DateTime(2026),
       );
       expect(h.orderedAddrs.map((a) => a.ip), [
+        'abcd.relay.example',
         '10.0.0.2',
         '100.64.0.1',
-        'abcd.relay.example',
       ]);
       expect(h.relayAddr?.isRelay, isTrue);
       expect(h.relayAddr!.portOr(h.port), 443);
       expect(h.addrs[2].portOr(h.port), 7391);
-      // A relay that worked last time is still tried last: direct paths
-      // must get their chance back once the phone is home again.
-      h.lastGoodAddr = 'abcd.relay.example';
-      expect(h.orderedAddrs.last.isRelay, isTrue);
-      expect(h.orderedAddrs.first.ip, '10.0.0.2');
+      // The relay leads whatever happened last time, and a direct address
+      // that worked still orders the fallbacks behind it.
+      h.lastGoodAddr = '100.64.0.1';
+      expect(h.orderedAddrs.first.isRelay, isTrue);
+      expect(h.orderedAddrs.map((a) => a.ip), [
+        'abcd.relay.example',
+        '100.64.0.1',
+        '10.0.0.2',
+      ]);
       expect(h.relayAddr!.label(h.port), 'relay');
       expect(h.addrs[2].label(h.port), '10.0.0.2:7391');
       final back = HostRecord.fromJson(
