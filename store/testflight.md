@@ -53,14 +53,22 @@ TestFlight → Testers and Groups → **+** → name it something like "Early ac
 Add the build to the group. Adding a build to an external group is what triggers
 **Beta App Review** — usually about a day, and only once per version, not per build.
 
-## 3. Public link (optional)
+## 3. Public link
 
-On the group, enable **Public Link**. That gives a URL anyone can open to install,
-with a tester cap you set. Without it, you add testers by email address one at a time.
+Enabled on the **Public beta** group, tester cap 1000:
 
-If you enable it, put the link on the landing page in place of the mailto button —
-that is a much lower-friction call to action than asking people to write an email.
-Tell me and I will make that change.
+```
+https://testflight.apple.com/join/usdtauzR
+```
+
+The URL is permanent and does not change between builds. It only installs anything
+while a build in the group has cleared Beta App Review; otherwise it serves "This beta
+isn't accepting any new testers right now". Check the link itself before sharing it
+rather than trusting the API's `publicLinkEnabled` flag, which only means the link is
+switched on, not that there is an approved build behind it.
+
+The landing page still offers a mailto button rather than this link. Swapping it is a
+lower-friction call to action, but only worth doing while the link is actually live.
 
 ## 4. Export compliance
 
@@ -71,5 +79,12 @@ encrypting user content itself, that key has to change.
 
 ## Note on builds
 
-The icon changed after 0.1.5, so build 7 in TestFlight still shows the Flutter logo.
-Use a build from `app-v0.1.6` or later for anything external.
+Current build is `0.1.7 (9)`, the first carrying the relay-first dialer. Builds
+`0.1.6 (8)` and `0.1.5 (7)` are expired — 0.1.5 still showed the Flutter logo, and
+0.1.6 predates the dialer change. TestFlight has no un-expire, so 0.1.7 is now the
+oldest installable build.
+
+Beta App Review is once per version, not per build: a new `app-v*` tag with a fresh
+version number needs its own submission, and a pending one cannot be cancelled through
+the API — `betaAppReviewSubmissions` allows only CREATE and GET. Expiring the build is
+the way to stop an old version reaching testers.

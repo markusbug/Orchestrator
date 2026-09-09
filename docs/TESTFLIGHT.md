@@ -101,7 +101,7 @@ skips the macOS job.
 Same as before:
 
 ```
-git tag app-v0.1.5 && git push origin app-v0.1.5
+git tag app-v0.1.7 && git push origin app-v0.1.7
 ```
 
 The tag builds the unsigned sideload IPA and, in parallel, the signed one. Ten

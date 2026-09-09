@@ -20,7 +20,7 @@ Install the app on the computer you want to reach, install the app on your phone
 one QR code. That is the whole setup.
 
 The phone app is called **Orc Terminal**; <https://orc.markushaas.com> is the short
-version of all of the above, and where to ask for access.
+version of all of the above; **Your phone** under Install has the two ways to get it.
 
 ## Install
 
@@ -66,14 +66,17 @@ Not yet. The daemon has no ConPTY support, so the machine side is Unix-only toda
 
 ### Your phone
 
-- **iOS** — **Orc Terminal** is on TestFlight, first signed build `app-v0.1.5`. There is
-  no App Store listing, and no public TestFlight link: access is by invitation, so ask at
-  <https://orc.markushaas.com>. Every `app-v*` tag builds both the signed TestFlight
-  upload ([docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)) and an unsigned IPA you can sideload
-  instead ([MVP.md](MVP.md) has those steps).
-- **Android** — runs on a real device, and `flutter build appbundle --release` produces
-  a signed bundle from `android/key.properties`. Not on Play yet, and no CI job builds
-  it, so the bundle is a local build for now.
+- **iOS** — **Orc Terminal** is on TestFlight, currently `app-v0.1.7`. Join through the
+  public link: <https://testflight.apple.com/join/usdtauzR>. It only installs while the
+  current version has cleared Beta App Review — roughly a day after each new version —
+  and otherwise says the beta is not accepting testers, so check it before passing it
+  on. There is no App Store listing yet. Every `app-v*` tag builds both the signed
+  TestFlight upload ([docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)) and an unsigned IPA you
+  can sideload instead ([MVP.md](MVP.md) has those steps).
+- **Android** — **Orc Terminal** is on Google Play's internal testing track as
+  `0.1.7 (7)`; ask at <https://orc.markushaas.com> to be added as a tester. The bundle
+  is a local `flutter build appbundle --release` signed from `android/key.properties` —
+  no CI job builds it yet.
 
 ## First run
 
@@ -94,9 +97,9 @@ see, and how to report a vulnerability.
 ## Status
 
 Working end to end: the daemon (Go, `daemon/`) on Ubuntu, the desktop app (Flutter,
-`app/`) released as `desktop-v0.1.0`, the iOS app — sideloaded from `app-v0.1.3` and on
-TestFlight from `app-v0.1.5` — and the hosted relay at `relay.markushaas.com`, verified
-on 2026-09-06 with an iPhone on cellular. Not yet proven: the macOS app on real
+`app/`) released as `desktop-v0.1.0`, the phone app — on TestFlight and on Play's
+internal track from `app-v0.1.7` — and the hosted relay at `relay.markushaas.com`,
+verified on 2026-09-06 with an iPhone on cellular. Not yet proven: the macOS app on real
 hardware, and Windows at all. See [PLAN.md](PLAN.md) for the architecture and
 milestones, [MVP.md](MVP.md) for scope, and [docs/DESKTOP.md](docs/DESKTOP.md) for how
 the desktop app is built and packaged.
