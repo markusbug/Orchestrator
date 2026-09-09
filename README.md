@@ -7,6 +7,11 @@ running — the phone is only a remote control, so locking it, closing the app o
 signal changes nothing. Come back an hour later and the terminal is exactly where you
 left it, still working.
 
+<p align="center">
+  <img src="docs/images/terminal.png" alt="A Claude Code session running in the phone app, with Esc, Tab, Ctrl and arrow keys along the bottom" width="270">
+  <img src="docs/images/sessions.png" alt="The session list, with a session waiting on a question pulled to the top" width="270">
+</p>
+
 - **Nothing to set up.** No port forwarding, no firewall rules, no VPN. Your phone
   reaches your machine from anywhere, and the relay it goes through cannot read the
   traffic — your laptop's own certificate is pinned end to end.
@@ -21,6 +26,25 @@ one QR code. That is the whole setup.
 
 The phone app is called **Orc Terminal**; <https://orc.markushaas.com> is the short
 version of all of the above; **Your phone** under Install has the two ways to get it.
+
+## Why not just SSH and tmux?
+
+If you already SSH into your own machine from your phone and like it, this will not win
+you over. It exists because four things kept getting in the way:
+
+- **Reaching the machine at all.** A laptop behind home NAT needs port forwarding, a
+  VPN, or a jump host. Here the daemon dials out to a relay, so there is nothing to open
+  and no address to remember.
+- **The keys Claude Code needs.** Esc, Ctrl-C, Tab and the arrows are not on a phone
+  keyboard. They sit in a permanent row just above it.
+- **Knowing when to look.** A session that has stopped to ask you something moves to the
+  top of the list. With tmux you find out by checking.
+- **Not babysitting the connection.** The session lives on your machine, not in the app,
+  so closing the app or losing signal costs nothing — same as tmux, and the reason the
+  phone side can stay this thin.
+
+The daemon is a PTY plus an RPC layer, so none of this replaces your shell — it is the
+same terminal, reached differently.
 
 ## Install
 
@@ -94,10 +118,14 @@ machine's own certificate, which the phone pins — the relay carries bytes it c
 read. [SECURITY.md](SECURITY.md) has the threat model, what the relay can and cannot
 see, and how to report a vulnerability.
 
+## License
+
+MIT — see [LICENSE](LICENSE).
+
 ## Status
 
 Working end to end: the daemon (Go, `daemon/`) on Ubuntu, the desktop app (Flutter,
-`app/`) released as `desktop-v0.1.0`, the phone app — on TestFlight and on Play's
+`app/`) released as `desktop-v0.1.1`, the phone app — on TestFlight and on Play's
 internal track from `app-v0.1.7` — and the hosted relay at `relay.markushaas.com`,
 verified on 2026-09-06 with an iPhone on cellular. Not yet proven: the macOS app on real
 hardware, and Windows at all. See [PLAN.md](PLAN.md) for the architecture and
