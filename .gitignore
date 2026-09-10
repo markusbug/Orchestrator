@@ -46,8 +46,3 @@ scripts/asc.py
 scripts/play.py
 WORKLOG.md
 __pycache__/
-
-# Desktop installers the landing page serves. Fetched from the GitHub release by
-# `make site-installers`, never committed: they are 60 MB and already versioned
-# by the release tag.
-site/public/download/

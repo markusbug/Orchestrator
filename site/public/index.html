@@ -209,9 +209,9 @@
           </div>
 
           <p class="get-alt"><span>Or download the installer:</span>
-             <a href="/download/orchestrator_0.1.1_amd64.deb.zip">Linux .deb</a>
-             <a href="/download/Orchestrator-0.1.1-x86_64.AppImage.zip">Linux AppImage</a>
-             <a href="/download/Orchestrator-0.1.1-arm64.dmg.zip">macOS .dmg</a></p>
+             <a href="https://github.com/markusbug/Orchestrator/releases/download/desktop-v0.1.1/orchestrator_0.1.1_amd64.deb">Linux .deb</a>
+             <a href="https://github.com/markusbug/Orchestrator/releases/download/desktop-v0.1.1/Orchestrator-0.1.1-x86_64.AppImage">Linux AppImage</a>
+             <a href="https://github.com/markusbug/Orchestrator/releases/download/desktop-v0.1.1/Orchestrator-0.1.1-arm64.dmg">macOS .dmg</a></p>
 
           <details class="get-more">
             <summary>Details</summary>
@@ -219,10 +219,11 @@
               <li>The script installs the <code>.deb</code> where <code>dpkg</code> exists
                   and the AppImage otherwise. On a server with no desktop, end it with
                   <code>sh -s -- --headless</code> to get just the background service.</li>
-              <li>Direct downloads are x86-64 for Linux and Apple silicon for macOS, zipped.
-                  Unzip first, and give the AppImage the execute bit
-                  (<code>chmod +x</code>) once. Checksums are in
-                  <a href="/download/SHA256SUMS">SHA256SUMS</a>.</li>
+              <li>Direct downloads are x86-64 for Linux and Apple silicon for macOS, served
+                  from the <a href="https://github.com/markusbug/Orchestrator/releases/tag/desktop-v0.1.1">GitHub
+                  release</a>. Give the AppImage the execute bit (<code>chmod +x</code>)
+                  once. Checksums are in <a href="https://github.com/markusbug/Orchestrator/releases/download/desktop-v0.1.1/SHA256SUMS">SHA256SUMS</a> and
+                  <a href="https://github.com/markusbug/Orchestrator/releases/download/desktop-v0.1.1/SHA256SUMS.macos">SHA256SUMS.macos</a>.</li>
               <li>The macOS build is signed ad-hoc rather than notarised, so Gatekeeper asks
                   you to allow it the first time.</li>
               <li>No Windows build yet.</li>
