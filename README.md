@@ -97,10 +97,13 @@ Not yet. The daemon has no ConPTY support, so the machine side is Unix-only toda
   on. There is no App Store listing yet. Every `app-v*` tag builds both the signed
   TestFlight upload ([docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)) and an unsigned IPA you
   can sideload instead ([MVP.md](MVP.md) has those steps).
-- **Android** — **Orc Terminal** is on Google Play's internal testing track as
-  `0.1.7 (7)`; ask at <https://orc.markushaas.com> to be added as a tester. The bundle
-  is a local `flutter build appbundle --release` signed from `android/key.properties` —
-  no CI job builds it yet.
+- **Android** — **Orc Terminal** is on Google Play's closed testing track as
+  `0.1.7 (7)`; join the [testers group](https://groups.google.com/g/orc-terminal-testers)
+  and opt in at <https://play.google.com/apps/testing/io.freedomfactory.orchestrator>.
+  Or skip Play: every `app-v*` release carries a signed `Orchestrator-<version>.apk`
+  to sideload ([docs/ANDROID.md](docs/ANDROID.md)). Play and the APK are signed with
+  different keys, so switching between them means uninstalling first. The Play bundle
+  itself is still a local `flutter build appbundle --release`.
 
 ## First run
 
@@ -162,4 +165,4 @@ To exercise the app's networking against the real daemon, run `orchestrator pair
 ORCH_LIVE_PORT=7391 ORCH_LIVE_CODE=123456 ORCH_LIVE_FP=sha256:... flutter test test/live_test.dart
 ```
 
-The iOS build runs in GitHub Actions on `app-v*` tags (`.github/workflows/ios.yml`) and produces an unsigned IPA for sideloading, plus a TestFlight upload when the signing secrets exist ([docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)). See [MVP.md](MVP.md) for the protocol, scope, and sideloading steps.
+The phone builds run in GitHub Actions on `app-v*` tags: `.github/workflows/ios.yml` produces an unsigned IPA for sideloading, plus a TestFlight upload when the signing secrets exist ([docs/TESTFLIGHT.md](docs/TESTFLIGHT.md)); `.github/workflows/android.yml` produces the release-signed APK when its secrets exist ([docs/ANDROID.md](docs/ANDROID.md)). See [MVP.md](MVP.md) for the protocol, scope, and sideloading steps.

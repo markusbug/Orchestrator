@@ -1,0 +1,119 @@
+name: android
+
+# Builds the release APK on a Linux runner. Runs on the same app-v* tags as
+# ios.yml so every app release carries both installers.
+on:
+  push:
+    tags: ["app-v*"]
+  workflow_dispatch:
+
+# The default for every job here; the release job opts up individually.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # attach to the release
+      id-token: write # sign the provenance attestation
+      attestations: write # record it
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+      # build.gradle.kts reads android/key.properties and falls back to the
+      # debug key when it is missing. A debug-signed APK is fine for checking
+      # that the build works but must not land in a release, so the gate
+      # below remembers whether the real key was there. The keystore is the
+      # Play upload key, base64-encoded; docs/ANDROID.md has the setup.
+      - id: signing
+        name: signing config
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=
+          for name in KEYSTORE KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            [ -n "${!name}" ] || missing="$missing ANDROID_$name"
+          done
+          if [ -n "$missing" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::release signing skipped, missing secrets:$missing"
+            exit 0
+          fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          cat > android/key.properties <<PROPS
+          storeFile=$RUNNER_TEMP/release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          PROPS
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+      - name: pub get
+        run: flutter pub get
+      - name: analyze
+        run: flutter analyze
+      - id: ver
+        name: version
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            name="${GITHUB_REF_NAME#app-v}"
+          else
+            name="$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: build apk
+        run: |
+          set -euo pipefail
+          flutter build apk --release --build-name="${{ steps.ver.outputs.name }}"
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             "Orchestrator-${{ steps.ver.outputs.name }}.apk"
+          ls -la Orchestrator-*.apk
+      # Proves the APK really carries the release key before it goes anywhere;
+      # a silent fallback to the debug key would otherwise look identical.
+      - name: verify signature
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          EXPECTED: ${{ secrets.ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          tool="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          "$tool" verify --print-certs Orchestrator-*.apk | tee certs.txt
+          if [ -n "$EXPECTED" ]; then
+            grep -qi "SHA-256 digest: $EXPECTED" certs.txt || {
+              echo "APK is not signed with the expected certificate" >&2; exit 1; }
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Orchestrator.apk
+          path: app/Orchestrator-*.apk
+      - name: attest provenance
+        if: github.ref_type == 'tag' && steps.signing.outputs.signed == 'true' && github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: app/Orchestrator-*.apk
+      - name: attach to release
+        if: startsWith(github.ref, 'refs/tags/app-v') && steps.signing.outputs.signed == 'true'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: app/Orchestrator-*.apk
+          generate_release_notes: true
+      - name: clean up
+        if: always()
+        run: rm -f android/key.properties "$RUNNER_TEMP/release.jks"

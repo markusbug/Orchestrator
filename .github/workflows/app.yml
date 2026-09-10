@@ -1,7 +1,7 @@
 name: app
 
-# Cheap Linux checks for the Flutter app on every change. The iOS build is
-# in ios.yml and only runs on tags.
+# Cheap Linux checks for the Flutter app on every change. The release builds
+# are in ios.yml and android.yml and only run on tags.
 on:
   push:
     branches: [main]
